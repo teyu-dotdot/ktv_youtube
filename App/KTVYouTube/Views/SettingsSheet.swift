@@ -7,11 +7,29 @@ struct SettingsSheet: View {
 
     @State private var baseURLString = ""
     @State private var accessToken = ""
+    @State private var apiKey = ""
     @State private var diskUsage = ""
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    SecureField("AIza…", text: $apiKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } header: {
+                    Text("YouTube API key")
+                } footer: {
+                    Text("""
+                    All that's needed to find karaoke versions. Create one free \
+                    at console.cloud.google.com — enable "YouTube Data API v3" \
+                    and make an API key. No other machine required.
+
+                    The free allowance is about 50 searches a day, which resets \
+                    at midnight Pacific time.
+                    """)
+                }
+
                 Section {
                     TextField("http://your-mac.local:8808", text: $baseURLString)
                         .textInputAutocapitalization(.never)
@@ -19,14 +37,13 @@ struct SettingsSheet: View {
                         .keyboardType(.URL)
                     SecureField("Access token (optional)", text: $accessToken)
                 } header: {
-                    Text("Helper service")
+                    Text("Helper service (optional)")
                 } footer: {
                     Text("""
-                    Used for two things: searching YouTube for karaoke versions, and — \
-                    only for songs that don't have one — fetching the original audio so \
-                    the app can remove the vocals itself. Point it at a small service you \
-                    run yourself; there's a reference implementation in the project's \
-                    server/ folder.
+                    Only needed for songs with no karaoke version, where the app has to \
+                    fetch the original and strip the vocals itself. It can also do the \
+                    searching instead of an API key. There's a reference implementation \
+                    in the project's server/ folder.
 
                     Karaoke videos found through search stream straight from YouTube and \
                     are never downloaded. Downloading originals is the other path, and \
@@ -76,7 +93,8 @@ struct SettingsSheet: View {
                     Button("Done") {
                         model.library.resolverConfiguration = ResolverConfiguration(
                             baseURLString: baseURLString,
-                            accessToken: accessToken
+                            accessToken: accessToken,
+                            youTubeAPIKey: apiKey
                         )
                         dismiss()
                     }
@@ -86,6 +104,7 @@ struct SettingsSheet: View {
                 let configuration = model.library.resolverConfiguration
                 baseURLString = configuration.baseURLString
                 accessToken = configuration.accessToken
+                apiKey = configuration.youTubeAPIKey
                 refreshDiskUsage()
             }
         }

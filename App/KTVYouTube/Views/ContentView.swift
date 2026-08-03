@@ -29,6 +29,9 @@ struct ContentView: View {
         .sheet(isPresented: $isShowingSettings) {
             SettingsSheet()
         }
+        .sheet(isPresented: $model.isShowingQueue) {
+            QueueSheet()
+        }
         .alert(
             "Something went wrong",
             isPresented: model.errorBinding,

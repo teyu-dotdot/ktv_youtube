@@ -22,11 +22,21 @@ struct LibraryView: View {
                 TrackRow(track: track, stage: model.library.importProgress[track.id])
                     .tag(track.id)
                     .contextMenu {
+                        QueueActionButtons(track: track)
+                        Divider()
                         Button(role: .destructive) {
                             model.delete(track)
                         } label: {
                             Label("Remove", systemImage: "trash")
                         }
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        Button {
+                            model.addToQueue(track)
+                        } label: {
+                            Label("Queue", systemImage: "text.append")
+                        }
+                        .tint(.indigo)
                     }
             }
             .onDelete { offsets in
@@ -87,7 +97,7 @@ struct LibraryView: View {
             set: { newValue in
                 guard let newValue,
                       let track = model.library.track(withID: newValue) else { return }
-                Task { await model.open(track) }
+                Task { await model.playNow(track) }
             }
         )
     }

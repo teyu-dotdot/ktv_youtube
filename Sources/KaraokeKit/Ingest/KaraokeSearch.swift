@@ -83,7 +83,7 @@ public struct KaraokeSearchClient: Sendable {
     }
 
     /// - Parameter query: song title, optionally with the artist.
-    public func search(_ query: String, limit: Int = 12) async throws -> [KaraokeSearchResult] {
+    public func search(_ query: String, limit: Int) async throws -> [KaraokeSearchResult] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 
@@ -160,8 +160,16 @@ public struct KaraokeSearchClient: Sendable {
 }
 
 public extension ResolverConfiguration {
-    /// Builds a search client, or nil when nothing is configured yet.
-    func makeSearchClient(session: URLSession = .shared) -> KaraokeSearchClient? {
+    /// Picks a search backend, or nil when neither is configured.
+    ///
+    /// An API key wins when both are set: it takes the helper service out of
+    /// the loop for the karaoke path entirely, which is the difference between
+    /// needing a second machine and not.
+    func makeSearchClient(session: URLSession = .shared) -> KaraokeSearching? {
+        let key = youTubeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !key.isEmpty {
+            return YouTubeDataAPISearchClient(apiKey: key, session: session)
+        }
         guard let baseURL else { return nil }
         let token = accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
         return KaraokeSearchClient(

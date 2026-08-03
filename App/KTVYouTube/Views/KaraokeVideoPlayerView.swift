@@ -1,14 +1,13 @@
 import SwiftUI
-import WebKit
 import KaraokeKit
 
 /// Plays a karaoke video in YouTube's own embedded player.
 ///
-/// This is the app's best-quality path, and it's the one that needs the least
-/// machinery: the instrumental is the real one the karaoke producer made, the
-/// lyrics are burned into the video with proper timing, and nothing has to be
-/// downloaded, decoded or analysed. The trade-off is that the audio is sealed
-/// inside WebKit — there's no way to reach the samples, so no key change.
+/// The app's best-quality path, and the one that needs the least machinery: the
+/// instrumental is the real one the karaoke producer made, the lyrics are burned
+/// into the video with proper timing, and nothing has to be downloaded, decoded
+/// or analysed. The trade-off is that the audio is sealed inside WebKit — there's
+/// no way to reach the samples, so no key change.
 struct KaraokeVideoPlayerView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -16,20 +15,10 @@ struct KaraokeVideoPlayerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let videoID = track.source.youTubeVideoID {
-                YouTubeEmbed(videoID: videoID)
-                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                    .background(.black)
-            } else {
-                ContentUnavailableView(
-                    "Video unavailable",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text("This track is missing its video id.")
-                )
-            }
-
-            details
+            video
+            controls
+            Divider()
+            UpNextStrip()
         }
         .navigationTitle(track.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -48,95 +37,120 @@ struct KaraokeVideoPlayerView: View {
         }
     }
 
-    private var details: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(track.title)
-                        .font(.title3.weight(.semibold))
-                    if let artist = track.artist {
-                        Text(artist)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+    @ViewBuilder
+    private var video: some View {
+        if let videoID = track.source.youTubeVideoID {
+            YouTubePlayerView(
+                videoID: videoID,
+                onEnded: { model.songFinished() },
+                onError: { code in model.karaokeVideoFailed(code: code) }
+            )
+            .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .background(.black)
+        } else {
+            ContentUnavailableView(
+                "Video unavailable",
+                systemImage: "exclamationmark.triangle",
+                description: Text("This track is missing its video id.")
+            )
+        }
+    }
+
+    private var controls: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 40) {
+                Button {
+                    model.playPrevious()
+                } label: {
+                    Image(systemName: "backward.end.fill")
+                        .font(.title2)
                 }
+                .disabled(!model.queue.hasPrevious)
+                .accessibilityLabel("Previous song")
 
-                Label(
-                    "This is a karaoke version — the backing track is the real "
-                    + "instrumental, so nothing needed removing. Sing in the "
-                    + "original key.",
-                    systemImage: "checkmark.seal"
-                )
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                Button {
+                    model.skipToNext()
+                } label: {
+                    Label("Skip", systemImage: "forward.end.fill")
+                        .font(.headline)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!model.queue.hasNext)
+                .accessibilityLabel("Skip to next song")
 
-                Spacer(minLength: 0)
+                Menu {
+                    Button {
+                        model.presentQueue()
+                    } label: {
+                        Label("Show queue", systemImage: "list.bullet")
+                    }
+                } label: {
+                    Image(systemName: "list.bullet")
+                        .font(.title2)
+                }
+                .accessibilityLabel("Queue")
             }
-            .frame(maxWidth: 640, alignment: .leading)
-            .padding(horizontalSizeClass == .regular ? 32 : 20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 14)
+
+            Label(
+                "Karaoke version — the backing track is the real instrumental, "
+                + "so nothing needed removing. Original key.",
+                systemImage: "checkmark.seal"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, horizontalSizeClass == .regular ? 40 : 20)
+            .padding(.bottom, 12)
         }
     }
 }
 
-/// A `WKWebView` hosting YouTube's IFrame player.
-///
-/// Loaded from an HTML string rather than by navigating to the embed URL, so
-/// the page can set `playsinline` and size itself to the view. `about:blank` as
-/// the base URL keeps the page in an opaque origin — it has no need to read
-/// anything of ours, and shouldn't be able to.
-private struct YouTubeEmbed: UIViewRepresentable {
-    let videoID: String
+/// A one-line "coming up" bar, so whoever's singing can see who's next without
+/// opening the queue.
+struct UpNextStrip: View {
+    @Environment(AppModel.self) private var model
 
-    func makeUIView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        // Without this the video takes over the whole screen on iPhone and
-        // can't be shown alongside the rest of the UI.
-        configuration.allowsInlineMediaPlayback = true
-        configuration.mediaTypesRequiringUserActionForPlayback = []
-        // Nothing here should outlive the session.
-        configuration.websiteDataStore = .nonPersistent()
+    var body: some View {
+        Button {
+            model.presentQueue()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "list.bullet")
+                    .foregroundStyle(.secondary)
 
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.scrollView.isScrollEnabled = false
-        webView.isOpaque = false
-        webView.backgroundColor = .black
-        webView.scrollView.backgroundColor = .black
-        return webView
-    }
+                if let next = model.nextUpTrack {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Up next")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(next.title)
+                            .font(.subheadline)
+                            .lineLimit(1)
+                    }
+                } else {
+                    Text("Nothing queued")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        guard context.coordinator.loadedVideoID != videoID else { return }
-        context.coordinator.loadedVideoID = videoID
-        webView.loadHTMLString(Self.html(for: videoID), baseURL: URL(string: "about:blank"))
-    }
+                Spacer(minLength: 0)
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    final class Coordinator {
-        var loadedVideoID: String?
-    }
-
-    /// `rel=0` keeps the end-of-video suggestions to the same channel, and
-    /// `modestbranding=1` keeps the chrome out of the way while singing.
-    private static func html(for videoID: String) -> String {
-        """
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-          <style>
-            html, body { margin: 0; padding: 0; background: #000; height: 100%; }
-            iframe { border: 0; width: 100%; height: 100%; display: block; }
-          </style>
-        </head>
-        <body>
-          <iframe
-            src="https://www.youtube-nocookie.com/embed/\(videoID)?playsinline=1&rel=0&modestbranding=1"
-            allow="autoplay; encrypted-media; picture-in-picture"
-            allowfullscreen></iframe>
-        </body>
-        </html>
-        """
+                if model.queue.hasNext {
+                    Text("\(model.queue.upNext.count)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Image(systemName: "chevron.up")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -33,6 +33,13 @@ gives you:
 - **Three removal presets**, trading vocal suppression against how much of the
   band survives.
 
+**A queue**, shared by both paths. Add songs from search or your library with
+**play now**, **play next**, or **add to queue**; skip forward and back; reorder
+or clear what's coming. Songs advance automatically when one finishes — the
+embedded player reports the end of a video through its JS bridge, so a karaoke
+video can be followed by a vocal-removed track and back again without anyone
+touching the iPad.
+
 Plus import from Files / AirDrop / any app's share sheet, background audio,
 lock-screen playback, AirPlay, and interruption handling.
 
@@ -44,24 +51,33 @@ lock-screen playback, AirPlay, and interruption handling.
 ## Requirements
 
 - iPadOS / iOS 17 or later (iPhone works too; the layout adapts)
-- Xcode 15+
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen) to generate the project file
-- Python 3.10+ on some machine you control, if you want YouTube links to work
+- A YouTube Data API key, for search — free, and the only thing the karaoke
+  path needs
+- Optionally, Python 3.10+ on a machine you control, for the vocal-removal
+  fallback
 
 ## Build and run
+
+### On a Mac
 
 ```bash
 brew install xcodegen        # once
 make app                     # generates App/KTVYouTube.xcodeproj and opens it
+make test                    # runs the KaraokeKit test suite
 ```
 
-Then set a development team in *Signing & Capabilities* and run on your iPad.
+Set a development team in *Signing & Capabilities*, then run on your iPad.
 
-Run the library's tests — the DSP, the link parser, the settings — with:
+### On the iPad itself
 
-```bash
-make test                    # swift test
-```
+Open `KTV.swiftpm` in Swift Playgrounds and press ▶. No Mac, no Xcode. It
+references the same sources as the Xcode project, so there's one copy of
+everything.
+
+The helper service can't run on an iPad — it's Python shelling out to yt-dlp —
+but with an API key the karaoke path needs nothing else, so an iPad-only setup
+works end to end. Full details, including what Swift Playgrounds can't
+configure, are in [docs/BUILDING-ON-IPAD.md](docs/BUILDING-ON-IPAD.md).
 
 ## Getting songs in
 
@@ -70,14 +86,24 @@ ranked results, sing. Falling back to **Add original, remove vocals** is for
 when search comes up empty, and **Choose a file** imports anything your iPad can
 play.
 
-Search and downloading both need the helper service. Importing a file doesn't.
+### Searching
 
-### The helper service
+Two ways, and you only need one:
 
-iOS has no supported API for searching or extracting YouTube media, and this app
-deliberately ships no scraper. It asks a small service *you* run. A reference
-implementation using [yt-dlp](https://github.com/yt-dlp/yt-dlp) is in
-[`server/`](server/):
+**A YouTube API key** (recommended). Enable *YouTube Data API v3* at
+`console.cloud.google.com`, make an API key, paste it into **Settings ▸ YouTube
+API key**. The app searches and ranks on its own — no other machine involved.
+The free allowance works out to about 50 searches a day.
+
+**The helper service**, if you're already running one for the fallback path. It
+does the same job server-side.
+
+### The helper service — only for vocal removal
+
+iOS has no supported API for extracting YouTube media, and this app deliberately
+ships no scraper. For songs with no karaoke version, it asks a small service
+*you* run for a downloadable audio URL. A reference implementation using
+[yt-dlp](https://github.com/yt-dlp/yt-dlp) is in [`server/`](server/):
 
 ```bash
 cd server
@@ -105,8 +131,11 @@ GET /resolve?url=<youtube url>
 `PROXY_AUDIO=1` to have the service stream the audio itself rather than handing
 out a CDN URL that can expire mid-download.
 
-Ranking lives in [`server/karaoke_scoring.py`](server/karaoke_scoring.py), which
-is where to add keywords for a language it handles badly.
+Ranking lives in two places that must agree, because either backend can do it:
+[`server/karaoke_scoring.py`](server/karaoke_scoring.py) and
+[`KaraokeRanker.swift`](Sources/KaraokeKit/Ingest/KaraokeRanker.swift). A test
+pins the Swift scores to the Python ones, so a keyword added to one and not the
+other fails the build rather than quietly changing results on one path only.
 
 > **On rights.** Karaoke videos found through search are *streamed from YouTube
 > in its own embedded player* — nothing is downloaded, which is the sanctioned
@@ -195,12 +224,14 @@ Worth knowing before you judge the results:
 Sources/KaraokeKit/
   DSP/          FFT, Hann window, biquads, the separator and its settings
   Audio/        AVAudioEngine two-stem player, session handling, decoding
-  Ingest/       search + resolver clients, link parsing, downloads, library,
-                stem cache
+  Ingest/       search clients and ranking, link parsing, downloads, library,
+                stem cache, playback queue
 App/
   project.yml   XcodeGen spec
   KTVYouTube/   SwiftUI app — library sidebar, search sheet, embedded karaoke
-                player, vocal-removal player, settings
+                player, vocal-removal player, queue, settings
+KTV.swiftpm/    Swift Playgrounds manifest, for building on the iPad itself
+docs/           building on iPad
 server/
   resolver.py          search and resolve endpoints
   karaoke_scoring.py   language-aware ranking of search results

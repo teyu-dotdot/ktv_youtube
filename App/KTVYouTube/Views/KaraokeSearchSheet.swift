@@ -16,7 +16,7 @@ struct KaraokeSearchSheet: View {
     @State private var searchError: String?
     @State private var hasSearched = false
 
-    private var isConfigured: Bool { model.library.resolverConfiguration.isConfigured }
+    private var isConfigured: Bool { model.library.resolverConfiguration.canSearch }
 
     var body: some View {
         NavigationStack {
@@ -64,11 +64,37 @@ struct KaraokeSearchSheet: View {
     private var resultList: some View {
         List(results) { result in
             Button {
-                add(result)
+                add(result, playNow: true)
             } label: {
                 KaraokeResultRow(result: result)
             }
             .buttonStyle(.plain)
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button {
+                    add(result, playNow: false)
+                } label: {
+                    Label("Queue", systemImage: "text.append")
+                }
+                .tint(.indigo)
+            }
+            .contextMenu {
+                Button {
+                    add(result, playNow: true)
+                } label: {
+                    Label("Play now", systemImage: "play.fill")
+                }
+                Button {
+                    let track = model.library.addKaraokeVideo(result)
+                    model.playNext(track)
+                } label: {
+                    Label("Play next", systemImage: "text.insert")
+                }
+                Button {
+                    add(result, playNow: false)
+                } label: {
+                    Label("Add to queue", systemImage: "text.append")
+                }
+            }
         }
         .listStyle(.plain)
     }
@@ -102,8 +128,9 @@ struct KaraokeSearchSheet: View {
         ContentUnavailableView {
             Label("Search isn't set up yet", systemImage: "gearshape")
         } description: {
-            Text("Searching YouTube needs the small helper service running. "
-                 + "Set its address in Settings.")
+            Text("Add a YouTube API key in Settings and search works on its own — "
+                 + "no other machine needed. Or point the app at the helper "
+                 + "service if you're running one.")
         }
     }
 
@@ -127,10 +154,18 @@ struct KaraokeSearchSheet: View {
         }
     }
 
-    private func add(_ result: KaraokeSearchResult) {
+    /// Adds the result to the library, then either starts it or queues it.
+    ///
+    /// Queueing deliberately keeps the sheet open — the point of a karaoke
+    /// night is lining several songs up in one go.
+    private func add(_ result: KaraokeSearchResult, playNow: Bool) {
         let track = model.library.addKaraokeVideo(result)
-        dismiss()
-        Task { await model.open(track) }
+        if playNow {
+            dismiss()
+            Task { await model.playNow(track) }
+        } else {
+            model.addToQueue(track)
+        }
     }
 }
 

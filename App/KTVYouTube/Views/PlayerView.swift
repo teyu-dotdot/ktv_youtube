@@ -33,6 +33,13 @@ struct PlayerView: View {
             .padding(.vertical, 32)
             .frame(maxWidth: .infinity)
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                Divider()
+                UpNextStrip()
+            }
+            .background(.bar)
+        }
         .navigationTitle(track.title)
         .navigationBarTitleDisplayMode(.inline)
         .onDisappear { model.persistPlayerSettings() }
@@ -82,7 +89,16 @@ struct PlayerView: View {
             .monospacedDigit()
             .foregroundStyle(.secondary)
 
-            HStack(spacing: 44) {
+            HStack(spacing: 28) {
+                Button {
+                    model.playPrevious()
+                } label: {
+                    Image(systemName: "backward.end.fill")
+                        .font(.title3)
+                }
+                .disabled(!model.queue.hasPrevious)
+                .accessibilityLabel("Previous song")
+
                 Button {
                     player.skip(by: -10)
                 } label: {
@@ -107,6 +123,15 @@ struct PlayerView: View {
                         .font(.title)
                 }
                 .accessibilityLabel("Forward 10 seconds")
+
+                Button {
+                    model.skipToNext()
+                } label: {
+                    Image(systemName: "forward.end.fill")
+                        .font(.title3)
+                }
+                .disabled(!model.queue.hasNext)
+                .accessibilityLabel("Skip to next song")
             }
             .buttonStyle(.plain)
             .foregroundStyle(.tint)

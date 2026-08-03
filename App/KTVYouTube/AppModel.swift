@@ -15,6 +15,11 @@ final class AppModel {
     private(set) var preparation: TrackPreparer.Stage?
     private(set) var errorMessage: String?
 
+    /// The running order. Both playback paths advance through this same queue,
+    /// so a karaoke video can be followed by a vocal-removed track and back.
+    private(set) var queue = PlaybackQueue()
+    var isShowingQueue = false
+
     /// Set when the loaded track is mono, which the separator can only
     /// approximate. Surfaced in the player so the result isn't a mystery.
     private(set) var isMonoSource = false
@@ -25,6 +30,11 @@ final class AppModel {
     init(storage: LibraryStorage) {
         self.library = KaraokeLibrary(storage: storage)
         self.preparer = TrackPreparer(storage: storage)
+        // The embedded player reports the end of a video through its JS bridge;
+        // this is the same signal from the local engine.
+        player.onPlaybackFinished = { [weak self] in
+            self?.songFinished()
+        }
     }
 
     var selectedTrack: Track? {
@@ -85,7 +95,7 @@ final class AppModel {
     func addYouTubeLink(_ input: String) async {
         do {
             let track = try await library.addYouTubeLink(input)
-            await open(track)
+            await playNow(track)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -94,7 +104,7 @@ final class AppModel {
     func importFile(at url: URL) async {
         do {
             let track = try await library.addLocalFile(at: url)
-            await open(track)
+            await playNow(track)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -107,6 +117,112 @@ final class AppModel {
             preparation = nil
         }
         library.delete(track)
+        queue.prune(keeping: Set(library.tracks.map(\.id)))
+    }
+
+    // MARK: - Queue
+
+    var upNextTracks: [Track] {
+        queue.upNext.compactMap { library.track(withID: $0) }
+    }
+
+    var nextUpTrack: Track? {
+        queue.nextUp.flatMap { library.track(withID: $0) }
+    }
+
+    func presentQueue() {
+        isShowingQueue = true
+    }
+
+    /// Plays `track` now, keeping whatever else is queued behind it.
+    func playNow(_ track: Track) async {
+        queue.playNow(track.id)
+        await open(track)
+        startPlaybackIfLocal()
+    }
+
+    func playNext(_ track: Track) {
+        queue.playNext(track.id)
+        startIfNothingPlaying()
+    }
+
+    func addToQueue(_ track: Track) {
+        queue.append(track.id)
+        startIfNothingPlaying()
+    }
+
+    /// A queue with nothing playing should start as soon as something lands in
+    /// it, rather than sitting silent until someone presses play.
+    private func startIfNothingPlaying() {
+        guard selectedTrackID == nil, let id = queue.current,
+              let track = library.track(withID: id) else { return }
+        Task {
+            await open(track)
+            startPlaybackIfLocal()
+        }
+    }
+
+    func skipToNext() {
+        guard let next = queue.advance(), let track = library.track(withID: next) else { return }
+        Task {
+            await open(track)
+            startPlaybackIfLocal()
+        }
+    }
+
+    func playPrevious() {
+        guard let previous = queue.goBack(), let track = library.track(withID: previous) else { return }
+        Task {
+            await open(track)
+            startPlaybackIfLocal()
+        }
+    }
+
+    func jumpInQueue(to offset: Int) {
+        guard let id = queue.jumpToUpNext(offset: offset),
+              let track = library.track(withID: id) else { return }
+        Task {
+            await open(track)
+            startPlaybackIfLocal()
+        }
+    }
+
+    func removeFromQueue(at offsets: IndexSet) {
+        queue.removeUpNext(at: offsets)
+    }
+
+    func moveInQueue(from source: IndexSet, to destination: Int) {
+        queue.moveUpNext(from: source, to: destination)
+    }
+
+    func clearUpNext() {
+        queue.clearUpNext()
+    }
+
+    /// Called when a song reaches its end, from either playback path.
+    func songFinished() {
+        guard queue.hasNext else { return }
+        skipToNext()
+    }
+
+    /// The embedded player couldn't play a video — removed, private, or
+    /// embedding turned off by the uploader. Don't strand the room on it.
+    func karaokeVideoFailed(code: Int) {
+        let title = selectedTrack?.title ?? "That video"
+        if queue.hasNext {
+            errorMessage = "\(title) can't be played here, so it was skipped."
+            skipToNext()
+        } else {
+            errorMessage = "\(title) can't be played here. The uploader may have "
+                + "disabled embedding, or the video may have been removed."
+        }
+    }
+
+    /// Karaoke videos autoplay themselves; the local engine needs telling.
+    private func startPlaybackIfLocal() {
+        guard let track = selectedTrack, !track.source.playsInEmbeddedPlayer else { return }
+        guard player.state == .ready || player.state == .paused else { return }
+        player.play()
     }
 
     // MARK: - Playback
