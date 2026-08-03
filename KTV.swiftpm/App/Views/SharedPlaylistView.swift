@@ -73,6 +73,15 @@ struct SharedPlaylistView: View {
         }
     }
 
+    /// Accepts the pasted link. `setSharedPlaylist` rejects anything that
+    /// isn't a playlist, and the field's own validation message already
+    /// explains that, so a false result just leaves the text in place.
+    private func apply() {
+        if model.setSharedPlaylist(linkInput) {
+            linkInput = ""
+        }
+    }
+
     private func setupStep(_ number: Int, _ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text("\(number).")
