@@ -132,6 +132,9 @@ struct YouTubeBrowserView: UIViewRepresentable {
     let model: YouTubeBrowserModel
     /// Video to show on first load. Later changes come through the model.
     let initialVideoID: String?
+    /// Playlist to start on, when one is configured. Takes priority over
+    /// `initialVideoID`, since a playlist is the running order.
+    var initialPlaylist: YouTubePlaylist? = nil
     /// When false, nothing is injected into the page at all — no hiding, no
     /// layout changes, no channel routing. Plain YouTube.
     ///
@@ -197,10 +200,13 @@ struct YouTubeBrowserView: UIViewRepresentable {
         context.coordinator.observe(webView)
         model.webView = webView
 
-        if let initialVideoID,
-           let url = URL(string: "https://www.youtube.com/watch?v=\(initialVideoID)") {
+        if let initialPlaylist {
+            webView.load(URLRequest(url: initialPlaylist.watchURL))
+        } else if let initialVideoID,
+                  let url = URL(string: "https://www.youtube.com/watch?v=\(initialVideoID)") {
             webView.load(URLRequest(url: url))
         } else if let url = URL(string: "https://www.youtube.com") {
+            // No playlist set yet — land on YouTube so there's something to do.
             webView.load(URLRequest(url: url))
         }
         return webView

@@ -1,72 +1,86 @@
 import SwiftUI
 import KaraokeKit
 
+/// The whole app: a full-screen YouTube player with a small floating bar.
+///
+/// There is no sidebar, no library and no queue view. The playlist is the
+/// running order, YouTube advances through it, and everything this app adds is
+/// the one thing YouTube can't do — choosing which stereo channel to play, so a
+/// karaoke track with a guide vocal on one side can be sung over.
 struct ContentView: View {
     @Environment(AppModel.self) private var model
-    @State private var columnVisibility = NavigationSplitViewVisibility.all
-    @State private var isShowingSettings = false
+    @State private var browser = YouTubeBrowserModel()
 
     var body: some View {
         @Bindable var model = model
 
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            LibraryView(isShowingSettings: $isShowingSettings)
-            .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 420)
-        } detail: {
-            detail
+        ZStack(alignment: .bottom) {
+            Color.black.ignoresSafeArea()
+
+            YouTubeBrowserView(
+                model: browser,
+                initialVideoID: nil,
+                initialPlaylist: model.playlist,
+                pageTweaksEnabled: model.pageTweaksEnabled
+            )
+            // Both settings are read when the web view is built, so changing
+            // either has to build a new one.
+            .id(model.pageTweaksEnabled)
+            .ignoresSafeArea()
+
+            floatingBar
         }
-        .navigationSplitViewStyle(.balanced)
-        .sheet(isPresented: $model.isShowingAddOriginal) {
-            AddTrackSheet(initialQuery: model.pendingOriginalQuery ?? "")
-        }
-        .sheet(isPresented: $isShowingSettings) {
+        .statusBarHidden()
+        .sheet(isPresented: $model.isShowingSettings) {
             SettingsSheet()
         }
-        .sheet(isPresented: $model.isShowingQueue) {
-            QueueSheet()
-        }
-        .alert(
-            "Something went wrong",
-            isPresented: model.errorBinding,
-            presenting: model.errorMessage
-        ) { _ in
-            Button("OK", role: .cancel) { model.dismissError() }
-        } message: { message in
-            Text(message)
-        }
-    }
-
-    @ViewBuilder
-    private var detail: some View {
-        if let track = model.selectedTrack {
-            // Karaoke videos play in YouTube's embedded player untouched;
-            // everything else goes through the local engine and the separator.
-            if track.source.playsInEmbeddedPlayer {
-                KaraokeVideoPlayerView(track: track)
-                    .id(track.id)
-            } else {
-                PlayerView(track: track)
-                    .id(track.id)
+        .onChange(of: model.configuration.sharedPlaylistID) {
+            if let playlist = model.playlist {
+                browser.loadPlaylist(playlist)
             }
-        } else {
-            EmptyPlayerView()
         }
     }
-}
 
-/// Shown in the detail column before anything is selected.
-struct EmptyPlayerView: View {
-    @Environment(AppModel.self) private var model
+    /// Deliberately always visible rather than tap-to-reveal: a tap belongs to
+    /// YouTube's own controls, and stealing it to show ours would mean fighting
+    /// the web view for every gesture.
+    private var floatingBar: some View {
+        HStack(spacing: 14) {
+            Picker("Audio channel", selection: Binding(
+                get: { model.channelMode },
+                set: { newMode in
+                    model.channelMode = newMode
+                    browser.setChannelMode(newMode)
+                }
+            )) {
+                ForEach(AudioChannelMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 230)
 
-    var body: some View {
-        ContentUnavailableView {
-            Label("Nothing playing", systemImage: "music.mic")
-        } description: {
-            Text("Search for a song to find its karaoke version, then pick it "
-                 + "from the list to start singing.")
-        } actions: {
-            Button("Find a song") { model.sidebarMode = .find }
-                .buttonStyle(.borderedProminent)
+            Divider().frame(height: 22)
+
+            Button {
+                browser.reload()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .accessibilityLabel("Reload")
+
+            Button {
+                model.isShowingSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .accessibilityLabel("Settings")
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(.white.opacity(0.12)))
+        .shadow(radius: 12, y: 4)
+        .padding(.bottom, 22)
     }
 }

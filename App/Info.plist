@@ -26,6 +26,8 @@
 	<true/>
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Scanning a QR code is the quick way to load a shared playlist without typing a link.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

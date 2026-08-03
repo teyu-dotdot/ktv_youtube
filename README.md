@@ -1,60 +1,45 @@
 # KTV — YouTube karaoke for iPad
 
-An iPadOS karaoke app. Type a song title, and it finds the karaoke version
-that already exists on YouTube — real instrumental, lyrics on screen — and plays
-it. For the songs that don't have one, it falls back to removing the vocals
-itself, on-device.
+A full-screen YouTube player for karaoke nights. Point it at a collaborative
+YouTube playlist, and everyone adds songs from the YouTube app on their own
+phone while the iPad plays them in order.
+
+The one thing it adds that YouTube can't do: a **Stereo / Left / Right** switch.
+Karaoke uploads — Chinese and Japanese ones especially — often carry a guide
+vocal on one channel and the bare instrumental on the other, so picking a
+channel is the 原唱/伴唱 switch every KTV machine has.
 
 ---
 
-## What it does
+## What it is
 
-**Search finds the karaoke version.** Most songs already have one uploaded: the
-official backing track with timed lyrics burned into the video. Searching for it
-beats anything signal processing can do, because it *is* the instrumental rather
-than an estimate of one. Those play back untouched in an embedded player —
-nothing downloaded, nothing analysed, no waiting.
+- **Full-screen video.** No sidebar, no library, no queue list. The playlist is
+  the running order and YouTube advances through it.
+- **A floating bar** with the channel switch, reload, and settings.
+- **QR scanning** to load a playlist without typing a link on a TV-sized screen:
+  share the playlist from a phone, show the code, point the iPad at it.
+- **Settings** for the playlist and an API key.
 
-Search is language-aware, because karaoke tagging isn't: a Korean upload says
-`MR`, a Chinese one says `伴奏`, a Japanese one says `カラオケ`, and none of them
-say "karaoke". Results are ranked on how confidently they look like an
-instrumental, and anything signalling `原唱`, `cover` or `live` is dropped.
+## How the shared queue works
 
-**Vocal removal is the fallback**, for the long tail with no karaoke version.
-The app downloads the original and strips the lead vocal with a centre-channel
-separator — about 28 dB of suppression on a typical pop mix. That path also
-gives you:
+Make a playlist in the YouTube app, set it to Unlisted, then **Edit ▸
+Collaborate**. Share the link. Everyone adds songs from their own phone; the
+iPad plays the list. No accounts in this app, no server, no sync protocol, and
+nothing for guests to install — YouTube already built all of it.
 
-- **Vocal fader**, 0–100%. Full karaoke at one end, a guide vocal in the middle,
-  the untouched original at the other. Moving it is instant — there's no
-  re-render.
-- **Key change**, ±12 semitones, without changing the tempo.
-- **Tempo change**, 0.75–1.25×, without changing the key.
-- **Three removal presets**, trading vocal suppression against how much of the
-  band survives.
+> A private playlist can't be opened by anyone else, including this app.
+> Unlisted is the setting you want.
 
-**A shared queue, without a server.** Point the app at a YouTube
-*collaborative* playlist and everyone adds songs from the YouTube app on their
-own phone — no accounts in this app, nothing for them to install. The iPad reads
-the list back and plays it in order, re-checking between songs so late additions
-appear. Reading a playlist costs 1 quota unit against the 10,000/day allowance,
-so refreshing constantly is free. Without an API key the app hands the playlist
-to YouTube to play natively instead.
+## What was removed, and what's still in the repo
 
-**A local queue**, shared by both paths. Add songs from search or your library with
-**play now**, **play next**, or **add to queue**; skip forward and back; reorder
-or clear what's coming. Songs advance automatically when one finishes — the
-embedded player reports the end of a video through its JS bridge, so a karaoke
-video can be followed by a vocal-removed track and back again without anyone
-touching the iPad.
+The local library, the playback queue, the ranked karaoke search and the
+on-device vocal separator were all cut from the app. They existed to reproduce
+a running order on the iPad, and a YouTube playlist already is one.
 
-Plus import from Files / AirDrop / any app's share sheet, background audio,
-lock-screen playback, AirPlay, and interruption handling.
-
-> **Karaoke videos can't be transposed.** They play in YouTube's embedded
-> player, and there's no way to reach that audio, so key and tempo controls only
-> apply to the vocal-removal path. Original key only on the good path — that's
-> the trade.
+`KaraokeKit` still contains the separator and its tests — around 28 dB of vocal
+suppression via centre-channel extraction, documented in
+[How the separator works](#how-the-separator-works). Nothing in the app calls it
+any more. It's kept because it works and is tested, not because it's wired up.
 
 ## Requirements
 
@@ -158,9 +143,9 @@ other fails the build rather than quietly changing results on one path only.
 > the decision about a given video is yours. Karaoke performance itself may also
 > need a licence depending on where and how you do it.
 
-## How it works
+## How the separator works
 
-This is the fallback path. When a karaoke version exists, none of it runs.
+Not reachable from the app any more — see above. Kept for reference.
 
 ### The idea
 
