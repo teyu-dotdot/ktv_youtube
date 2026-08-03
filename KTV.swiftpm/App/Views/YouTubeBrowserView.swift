@@ -197,34 +197,62 @@ struct YouTubeBrowserView: UIViewRepresentable {
         }
     }
 
-    /// Strips YouTube's own "up next" rail and turns its autoplay off.
+    /// Reduces a watch page to nothing but the video, and turns YouTube's own
+    /// autoplay off.
     ///
-    /// Both exist to decide what plays after this video, and this app already
-    /// has a queue for that. Left alone they win the race: YouTube starts
-    /// navigating to its own suggestion the moment a song ends, so the running
-    /// order the room agreed on gets quietly replaced by whatever the
-    /// recommender picked.
+    /// Two problems, one script. YouTube's up-next rail decides what plays
+    /// next, which this app already has a queue for; and once the rail is
+    /// hidden the player keeps the width it was laid out with, leaving a black
+    /// margin where the rail used to be. So the player is stretched to fill the
+    /// pane rather than merely uncovered.
     ///
-    /// The selectors cover mobile web (`ytm-`) and desktop (`ytd-`) because the
-    /// layout served depends on the window size, and an iPad in landscape sits
-    /// right on the boundary.
+    /// Scoped to `/watch` on purpose. The same rules applied to search results
+    /// or the home page would hide the very things you browse with, so a class
+    /// on `<html>` gates them and is re-evaluated as you navigate — YouTube is
+    /// a single-page app, so the URL changes without a reload.
+    ///
+    /// Selectors are matched by substring and cover both the `ytd-` (desktop)
+    /// and `ytm-` (mobile) component families, because the layout served
+    /// depends on window size and an iPad in landscape sits on the boundary.
     private static let declutterScript = """
     (function () {
-      // Substring matching rather than an exact list: YouTube serves several
-      // layouts depending on window size and renames these containers freely,
-      // and a selector list that misses is indistinguishable from no script at
-      // all. Anything named "related" or "secondary" next to the player is the
-      // suggestions rail.
       var css = [
-        '[id*="related" i], [class*="related" i] { display: none !important; }',
-        '[id*="secondary" i], [class*="secondary" i] { display: none !important; }',
-        'ytd-watch-next-secondary-results-renderer,',
-        'ytm-watch-next-secondary-results-renderer,',
-        'ytd-compact-video-renderer, ytm-compact-video-renderer { display: none !important; }',
-        // Reclaim the space the rail was using.
-        '#primary, #primary-inner { max-width: 100% !important; width: 100% !important; }',
-        'ytd-watch-flexy[flexy] #columns { max-width: 100% !important; }',
-        '.watch-content, ytm-watch { width: 100% !important; }'
+        /* Anything that isn't the player, on a watch page only. */
+        'html.ktv-watch [id*="related" i], html.ktv-watch [class*="related" i],',
+        'html.ktv-watch [id*="secondary" i], html.ktv-watch [class*="secondary" i],',
+        'html.ktv-watch #comments, html.ktv-watch ytd-comments,',
+        'html.ktv-watch #meta, html.ktv-watch #below, html.ktv-watch #info,',
+        'html.ktv-watch ytd-watch-metadata,',
+        'html.ktv-watch ytm-slim-video-metadata-section-renderer,',
+        'html.ktv-watch ytm-video-description-header-renderer,',
+        'html.ktv-watch ytm-comments-entry-point-header-renderer,',
+        'html.ktv-watch .slim-video-information-container,',
+        'html.ktv-watch #masthead, html.ktv-watch ytd-masthead,',
+        'html.ktv-watch ytm-mobile-topbar-renderer { display: none !important; }',
+
+        /* Let the player have the whole pane. */
+        'html.ktv-watch, html.ktv-watch body {',
+        '  height: 100% !important; margin: 0 !important; padding: 0 !important;',
+        '  overflow: hidden !important; background: #000 !important; }',
+        'html.ktv-watch #columns, html.ktv-watch #primary,',
+        'html.ktv-watch #primary-inner, html.ktv-watch ytd-watch-flexy,',
+        'html.ktv-watch ytm-watch, html.ktv-watch .watch-content,',
+        'html.ktv-watch #player, html.ktv-watch #player-container,',
+        'html.ktv-watch #player-container-outer, html.ktv-watch #player-container-inner,',
+        'html.ktv-watch .player-container, html.ktv-watch ytd-player,',
+        'html.ktv-watch #movie_player, html.ktv-watch .html5-video-player {',
+        '  width: 100% !important; max-width: none !important;',
+        '  height: 100% !important; max-height: none !important;',
+        '  min-width: 0 !important; margin: 0 !important; padding: 0 !important;',
+        '  left: 0 !important; top: 0 !important; }',
+
+        /* The video element itself is positioned in pixels by YouTube's own
+           resize code; !important beats those inline styles. */
+        'html.ktv-watch video, html.ktv-watch .video-stream,',
+        'html.ktv-watch .html5-main-video {',
+        '  width: 100% !important; height: 100% !important;',
+        '  left: 0 !important; top: 0 !important;',
+        '  object-fit: contain !important; }'
       ].join('\\n');
 
       function injectCSS() {
@@ -235,8 +263,14 @@ struct YouTubeBrowserView: UIViewRepresentable {
         (document.head || document.documentElement).appendChild(style);
       }
 
+      // Only strip watch pages; browsing needs its chrome.
+      function applyMode() {
+        var watching = location.pathname.indexOf('/watch') === 0;
+        document.documentElement.classList.toggle('ktv-watch', watching);
+      }
+
       // Autoplay lives behind a toggle whose markup differs by layout, so try
-      // every form and stop once one reports itself off.
+      // every form and click only the ones reporting themselves on.
       function disableAutoplay() {
         var toggles = document.querySelectorAll(
           '.ytp-autonav-toggle-button, ytm-autonav-toggle button, ' +
@@ -250,9 +284,12 @@ struct YouTubeBrowserView: UIViewRepresentable {
         }
       }
 
-      injectCSS();
-      disableAutoplay();
-      setInterval(function () { injectCSS(); disableAutoplay(); }, 1500);
+      function tick() { injectCSS(); applyMode(); disableAutoplay(); }
+      tick();
+      // YouTube resizes the player after its own layout settles, and navigates
+      // without reloading, so this has to keep running rather than fire once.
+      setInterval(tick, 1000);
+      window.addEventListener('resize', tick);
     })();
     """
 
