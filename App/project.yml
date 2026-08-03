@@ -16,17 +16,17 @@ targets:
     platform: iOS
     # iPad-first, but the same UI adapts to iPhone.
     deploymentTarget: "17.0"
+    # The app sources live in KTV.swiftpm/App so that Swift Playgrounds can
+    # reach them; see the note in the root Package.swift. XcodeGen has no such
+    # restriction and just points at them.
     sources:
-      - path: KTVYouTube
-        # Referenced via `info.path` below; without this it would also be
-        # copied into the bundle as a stray resource.
-        excludes:
-          - Info.plist
+      - path: ../KTV.swiftpm/App
+        name: KTVYouTube
     dependencies:
       - package: KaraokeKit
         product: KaraokeKit
     info:
-      path: KTVYouTube/Info.plist
+      path: Info.plist
       properties:
         CFBundleDisplayName: KTV
         CFBundleShortVersionString: "1.0"

@@ -70,9 +70,12 @@ Set a development team in *Signing & Capabilities*, then run on your iPad.
 
 ### On the iPad itself
 
-Open `KTV.swiftpm` in Swift Playgrounds and press ▶. No Mac, no Xcode. It
-references the same sources as the Xcode project, so there's one copy of
-everything.
+Open `KTV.swiftpm` in Swift Playgrounds and press ▶. No Mac, no Xcode.
+
+The app and library sources live *inside* `KTV.swiftpm/`, because Swift
+Playgrounds can only see the folder you open and SwiftPM won't accept target
+paths that escape the package root. The root `Package.swift` and the Xcode
+project point into it, so there's still one copy of everything.
 
 The helper service can't run on an iPad — it's Python shelling out to yt-dlp —
 but with an API key the karaoke path needs nothing else, so an iPad-only setup
@@ -221,22 +224,25 @@ Worth knowing before you judge the results:
 ## Project layout
 
 ```
-Sources/KaraokeKit/
-  DSP/          FFT, Hann window, biquads, the separator and its settings
-  Audio/        AVAudioEngine two-stem player, session handling, decoding
-  Ingest/       search clients and ranking, link parsing, downloads, library,
-                stem cache, playback queue
-App/
-  project.yml   XcodeGen spec
-  KTVYouTube/   SwiftUI app — library sidebar, search sheet, embedded karaoke
-                player, vocal-removal player, queue, settings
-KTV.swiftpm/    Swift Playgrounds manifest, for building on the iPad itself
-docs/           building on iPad
+KTV.swiftpm/            opens directly in Swift Playgrounds on an iPad
+  Package.swift         app playground manifest
+  App/                  SwiftUI app — library sidebar, search sheet, embedded
+                        karaoke player, vocal-removal player, queue, settings
+  KaraokeKit/
+    DSP/                FFT, Hann window, biquads, separator and its settings
+    Audio/              AVAudioEngine two-stem player, session, decoding
+    Ingest/             search clients and ranking, link parsing, downloads,
+                        library, stem cache, playback queue
+Package.swift           builds and tests KaraokeKit on macOS and Linux
+App/project.yml         XcodeGen spec for the Xcode build
+Tests/                  XCTest suite for the DSP, clients and platform-free layers
 server/
-  resolver.py          search and resolve endpoints
-  karaoke_scoring.py   language-aware ranking of search results
-Tests/          XCTest suite for the DSP, the clients and the platform-free layers
+  resolver.py           search and resolve endpoints
+  karaoke_scoring.py    language-aware ranking of search results
+docs/                   building on iPad
 ```
+
+All three build systems read the same source files; nothing is duplicated.
 
 `KaraokeKit` is a plain Swift package with no third-party dependencies. The DSP
 falls back to a portable Swift FFT where Accelerate isn't available, so the

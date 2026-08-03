@@ -19,9 +19,15 @@ That's it. No Mac, no Xcode, no developer account for running on your own iPad.
    `KTV.swiftpm` folder.
 3. Press ▶.
 
-`KTV.swiftpm/Package.swift` points at the app sources in `../App/KTVYouTube` and
-depends on `KaraokeKit` at the repository root, so there's one copy of
-everything and edits made on the iPad are edits to the real project.
+Everything the app needs lives inside `KTV.swiftpm/` — the SwiftUI app in
+`App/`, the library in `KaraokeKit/`. That's not a stylistic choice: Swift
+Playgrounds can only see the folder you open, and SwiftPM refuses target paths
+that escape the package root, so a manifest reaching out to a sibling directory
+fails twice over.
+
+The repository's root `Package.swift` and the Xcode project both point *into*
+`KTV.swiftpm/` instead. One copy of every file, three build systems reading it,
+and edits made on the iPad are edits to the real project.
 
 To put the app on the home screen rather than running it inside Swift
 Playgrounds, use **⋯ ▸ App Settings** to set a name and icon, then the app can

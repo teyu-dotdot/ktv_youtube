@@ -3,9 +3,12 @@
 // App Playground manifest — this is what lets the app be built and run on an
 // iPad itself, in Swift Playgrounds, with no Mac and no Xcode.
 //
-// The app sources live in ../App/KTVYouTube and are referenced in place rather
-// than duplicated, so there is only ever one copy to edit. KaraokeKit comes
-// from the repository root, which is a plain Swift package.
+// Everything the app needs lives inside this folder, on purpose. SwiftPM
+// refuses target paths that escape the package root, and Swift Playgrounds
+// sandboxes access to the folder you opened, so a manifest reaching out to
+// ../Sources would fail twice over. The repository's root Package.swift and
+// the Xcode project both point *in* here instead, which keeps one copy of
+// every file rather than a copy per build system.
 //
 // See ../docs/BUILDING-ON-IPAD.md for what does and doesn't work this way.
 
@@ -36,17 +39,15 @@ let package = Package(
             ]
         )
     ],
-    dependencies: [
-        .package(name: "KaraokeKit", path: "..")
-    ],
     targets: [
         .executableTarget(
             name: "KTVApp",
-            dependencies: [
-                .product(name: "KaraokeKit", package: "KaraokeKit")
-            ],
-            path: "../App/KTVYouTube",
-            exclude: ["Info.plist"]
+            dependencies: ["KaraokeKit"],
+            path: "App"
+        ),
+        .target(
+            name: "KaraokeKit",
+            path: "KaraokeKit"
         )
     ]
 )
