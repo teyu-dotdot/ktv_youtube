@@ -3,7 +3,6 @@ import KaraokeKit
 
 struct LibraryView: View {
     @Environment(AppModel.self) private var model
-    @Binding var isShowingSearch: Bool
     @Binding var isShowingSettings: Bool
     @State private var searchText = ""
 
@@ -17,6 +16,55 @@ struct LibraryView: View {
     }
 
     var body: some View {
+        @Bindable var model = model
+
+        VStack(spacing: 0) {
+            Picker("Sidebar", selection: $model.sidebarMode) {
+                ForEach(AppModel.SidebarMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+
+            switch model.sidebarMode {
+            case .library: libraryList
+            case .find: KaraokeSearchSheet()
+            }
+        }
+        .navigationTitle(model.sidebarMode == .library ? "Songs" : "Find a song")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button {
+                        model.sidebarMode = .find
+                    } label: {
+                        Label("Find karaoke version", systemImage: "magnifyingglass")
+                    }
+                    Divider()
+                    Button {
+                        model.presentAddOriginal()
+                    } label: {
+                        Label("Add original, remove vocals", systemImage: "waveform.badge.minus")
+                    }
+                } label: {
+                    Label("Add song", systemImage: "plus")
+                } primaryAction: {
+                    model.sidebarMode = .find
+                }
+            }
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    isShowingSettings = true
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+            }
+        }
+    }
+
+    private var libraryList: some View {
         List(selection: selectionBinding) {
             ForEach(filteredTracks) { track in
                 TrackRow(track: track, stage: model.library.importProgress[track.id])
@@ -47,7 +95,6 @@ struct LibraryView: View {
         }
         .listStyle(.sidebar)
         .searchable(text: $searchText, prompt: "Search songs")
-        .navigationTitle("Songs")
         .overlay {
             if model.library.tracks.isEmpty {
                 ContentUnavailableView {
@@ -59,36 +106,6 @@ struct LibraryView: View {
                 ContentUnavailableView.search(text: searchText)
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button {
-                        isShowingSearch = true
-                    } label: {
-                        Label("Find karaoke version", systemImage: "magnifyingglass")
-                    }
-                    Divider()
-                    Button {
-                        model.presentAddOriginal()
-                    } label: {
-                        Label("Add original, remove vocals", systemImage: "waveform.badge.minus")
-                    }
-                } label: {
-                    Label("Add song", systemImage: "plus")
-                } primaryAction: {
-                    // Tapping goes straight to search; the menu is for the
-                    // fallback path, which most songs won't need.
-                    isShowingSearch = true
-                }
-            }
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    isShowingSettings = true
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-            }
-        }
     }
 
     private var selectionBinding: Binding<UUID?> {
@@ -97,7 +114,7 @@ struct LibraryView: View {
             set: { newValue in
                 guard let newValue,
                       let track = model.library.track(withID: newValue) else { return }
-                Task { await model.playNow(track) }
+                Task { await model.playFromLibrary(track) }
             }
         )
     }

@@ -141,6 +141,37 @@ final class AppModel {
         startPlaybackIfLocal()
     }
 
+    /// Starts the library at `track` and queues everything after it.
+    ///
+    /// What tapping a row in the sidebar does. Treating the visible list as the
+    /// running order is what every music app does, and the alternative — a
+    /// library of songs alongside an empty queue that says "Nothing queued" —
+    /// reads as broken even though it's working as written.
+    func playFromLibrary(_ track: Track) async {
+        let ids = library.tracks.map(\.id)
+        guard let index = ids.firstIndex(of: track.id) else {
+            await playNow(track)
+            return
+        }
+        queue.replace(with: ids, startingAt: index)
+        await open(track)
+        startPlaybackIfLocal()
+    }
+
+    /// Which pane the sidebar is showing.
+    enum SidebarMode: String, CaseIterable, Identifiable {
+        case library, find
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .library: return "Songs"
+            case .find: return "Find"
+            }
+        }
+    }
+
+    var sidebarMode: SidebarMode = .library
+
     func playNext(_ track: Track) {
         queue.playNext(track.id)
         startIfNothingPlaying()

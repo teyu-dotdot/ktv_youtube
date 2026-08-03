@@ -13,17 +13,27 @@ struct KaraokeVideoPlayerView: View {
     let track: Track
 
     @State private var browser = YouTubeBrowserModel()
+    @State private var isExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
-            YouTubeBrowserView(model: browser, initialVideoID: track.source.youTubeVideoID)
-                .background(.black)
+            ZStack(alignment: .topTrailing) {
+                YouTubeBrowserView(model: browser, initialVideoID: track.source.youTubeVideoID)
+                    .background(.black)
 
-            Divider()
-            controls
-            Divider()
-            UpNextStrip()
+                expandButton
+            }
+
+            if !isExpanded {
+                Divider()
+                controls
+                Divider()
+                UpNextStrip()
+            }
         }
+        .ignoresSafeArea(edges: isExpanded ? .all : [])
+        .statusBarHidden(isExpanded)
+        .toolbar(isExpanded ? .hidden : .visible, for: .navigationBar)
         .navigationTitle(track.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
@@ -36,6 +46,24 @@ struct KaraokeVideoPlayerView: View {
                 browser.load(videoID: videoID)
             }
         }
+    }
+
+    /// Hands the whole screen to the video. Sits over the web view rather than
+    /// in the toolbar because the toolbar is one of the things it hides.
+    private var expandButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+        } label: {
+            Image(systemName: isExpanded
+                  ? "arrow.down.right.and.arrow.up.left"
+                  : "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 16, weight: .semibold))
+                .padding(10)
+                .background(.black.opacity(0.55), in: Circle())
+                .foregroundStyle(.white)
+        }
+        .padding(12)
+        .accessibilityLabel(isExpanded ? "Exit full screen" : "Full screen")
     }
 
     // MARK: - Controls

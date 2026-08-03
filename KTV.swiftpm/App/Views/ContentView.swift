@@ -4,25 +4,18 @@ import KaraokeKit
 struct ContentView: View {
     @Environment(AppModel.self) private var model
     @State private var columnVisibility = NavigationSplitViewVisibility.all
-    @State private var isShowingSearch = false
     @State private var isShowingSettings = false
 
     var body: some View {
         @Bindable var model = model
 
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            LibraryView(
-                isShowingSearch: $isShowingSearch,
-                isShowingSettings: $isShowingSettings
-            )
+            LibraryView(isShowingSettings: $isShowingSettings)
             .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 420)
         } detail: {
             detail
         }
         .navigationSplitViewStyle(.balanced)
-        .sheet(isPresented: $isShowingSearch) {
-            KaraokeSearchSheet()
-        }
         .sheet(isPresented: $model.isShowingAddOriginal) {
             AddTrackSheet(initialQuery: model.pendingOriginalQuery ?? "")
         }
@@ -56,14 +49,14 @@ struct ContentView: View {
                     .id(track.id)
             }
         } else {
-            EmptyPlayerView(isShowingSearch: $isShowingSearch)
+            EmptyPlayerView()
         }
     }
 }
 
 /// Shown in the detail column before anything is selected.
 struct EmptyPlayerView: View {
-    @Binding var isShowingSearch: Bool
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         ContentUnavailableView {
@@ -72,7 +65,7 @@ struct EmptyPlayerView: View {
             Text("Search for a song to find its karaoke version, then pick it "
                  + "from the list to start singing.")
         } actions: {
-            Button("Find a song") { isShowingSearch = true }
+            Button("Find a song") { model.sidebarMode = .find }
                 .buttonStyle(.borderedProminent)
         }
     }

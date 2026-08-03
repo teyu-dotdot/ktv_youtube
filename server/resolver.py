@@ -226,16 +226,20 @@ def search() -> Response:
                         "thumbnail": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
                         "score": scored.score,
                         "confidence": scored.confidence,
+                        "view_count": entry.get("view_count"),
                     }
     except Exception:  # pragma: no cover - unexpected upstream failure
         log.exception("search failed for %r", query)
         return error("The search failed. Try again in a moment.", HTTPStatus.BAD_GATEWAY)
 
-    results = sorted(found.values(), key=lambda item: item["score"], reverse=True)
-
-    # Anything scoring below zero is actively signalling "original vocal" or
-    # "live" — never worth showing in a karaoke app.
-    results = [item for item in results if item["score"] > 0][:limit]
+    # Scoring decides what's *eligible*; anything at or below zero is signalling
+    # "original vocal" or "live" and never belongs in a karaoke app. Ordering is
+    # then by popularity, matching the app's own client-side ranking: among
+    # tracks that are all genuinely karaoke, the most-watched is usually the
+    # best-produced one.
+    results = [item for item in found.values() if item["score"] > 0]
+    results.sort(key=lambda item: item.get("view_count") or 0, reverse=True)
+    results = results[:limit]
 
     return jsonify({"results": results, "query": query})
 

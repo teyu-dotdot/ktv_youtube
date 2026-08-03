@@ -85,6 +85,13 @@ struct YouTubeBrowserView: UIViewRepresentable {
                 forMainFrameOnly: true
             )
         )
+        controller.addUserScript(
+            WKUserScript(
+                source: Self.declutterScript,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            )
+        )
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
@@ -178,6 +185,58 @@ struct YouTubeBrowserView: UIViewRepresentable {
             model.update(from: webView)
         }
     }
+
+    /// Strips YouTube's own "up next" rail and turns its autoplay off.
+    ///
+    /// Both exist to decide what plays after this video, and this app already
+    /// has a queue for that. Left alone they win the race: YouTube starts
+    /// navigating to its own suggestion the moment a song ends, so the running
+    /// order the room agreed on gets quietly replaced by whatever the
+    /// recommender picked.
+    ///
+    /// The selectors cover mobile web (`ytm-`) and desktop (`ytd-`) because the
+    /// layout served depends on the window size, and an iPad in landscape sits
+    /// right on the boundary.
+    private static let declutterScript = """
+    (function () {
+      var css = [
+        '#related, #secondary, #secondary-inner { display: none !important; }',
+        'ytd-watch-next-secondary-results-renderer { display: none !important; }',
+        'ytm-watch-next-secondary-results-renderer { display: none !important; }',
+        'ytm-companion-slot, ytm-item-section-renderer.related { display: none !important; }',
+        // Reclaim the space the rail was using.
+        '#primary, #primary-inner { max-width: 100% !important; width: 100% !important; }',
+        'ytd-watch-flexy[flexy] #columns { max-width: 100% !important; }'
+      ].join('\\n');
+
+      function injectCSS() {
+        if (document.getElementById('ktv-declutter')) { return; }
+        var style = document.createElement('style');
+        style.id = 'ktv-declutter';
+        style.textContent = css;
+        (document.head || document.documentElement).appendChild(style);
+      }
+
+      // Autoplay lives behind a toggle whose markup differs by layout, so try
+      // every form and stop once one reports itself off.
+      function disableAutoplay() {
+        var toggles = document.querySelectorAll(
+          '.ytp-autonav-toggle-button, ytm-autonav-toggle button, ' +
+          'button[aria-label*="Autoplay"], button[aria-label*="自動再生"]'
+        );
+        for (var i = 0; i < toggles.length; i++) {
+          var t = toggles[i];
+          var on = t.getAttribute('aria-checked') === 'true'
+                || t.getAttribute('aria-pressed') === 'true';
+          if (on) { t.click(); }
+        }
+      }
+
+      injectCSS();
+      disableAutoplay();
+      setInterval(function () { injectCSS(); disableAutoplay(); }, 1500);
+    })();
+    """
 
     /// Watches the page's video element and reports when it finishes.
     ///

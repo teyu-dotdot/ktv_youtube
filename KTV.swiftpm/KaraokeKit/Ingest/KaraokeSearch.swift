@@ -23,6 +23,8 @@ public struct KaraokeSearchResult: Identifiable, Equatable, Hashable, Sendable {
     public let duration: TimeInterval?
     public let thumbnailURL: URL?
     public let confidence: Confidence
+    /// Lifetime views, used to order results. Nil when the backend didn't say.
+    public let viewCount: Int?
 
     public var id: String { videoID }
 
@@ -34,7 +36,8 @@ public struct KaraokeSearchResult: Identifiable, Equatable, Hashable, Sendable {
         channel: String,
         duration: TimeInterval?,
         thumbnailURL: URL?,
-        confidence: Confidence
+        confidence: Confidence,
+        viewCount: Int? = nil
     ) {
         self.videoID = videoID
         self.title = title
@@ -42,6 +45,20 @@ public struct KaraokeSearchResult: Identifiable, Equatable, Hashable, Sendable {
         self.duration = duration
         self.thumbnailURL = thumbnailURL
         self.confidence = confidence
+        self.viewCount = viewCount
+    }
+
+    /// "1.2M views" — compact enough for a list row.
+    public var viewCountDescription: String? {
+        guard let viewCount else { return nil }
+        switch viewCount {
+        case 1_000_000...:
+            return String(format: "%.1fM views", Double(viewCount) / 1_000_000)
+        case 1_000...:
+            return String(format: "%.0fK views", Double(viewCount) / 1_000)
+        default:
+            return "\(viewCount) views"
+        }
     }
 }
 
@@ -131,7 +148,8 @@ public struct KaraokeSearchClient: Sendable {
                 channel: item.channel ?? "",
                 duration: item.duration,
                 thumbnailURL: item.thumbnail.flatMap(URL.init(string:)),
-                confidence: item.confidence ?? .low
+                confidence: item.confidence ?? .low,
+                viewCount: item.viewCount
             )
         }
     }
@@ -146,9 +164,11 @@ public struct KaraokeSearchClient: Sendable {
             let duration: TimeInterval?
             let thumbnail: String?
             let confidence: KaraokeSearchResult.Confidence?
+            let viewCount: Int?
 
             enum CodingKeys: String, CodingKey {
                 case videoID = "video_id"
+                case viewCount = "view_count"
                 case title, channel, duration, thumbnail, confidence
             }
         }

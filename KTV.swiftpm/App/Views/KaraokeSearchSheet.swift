@@ -6,9 +6,11 @@ import KaraokeKit
 /// The main way songs get in. Typing a title here is the whole flow — no link
 /// to copy, no download, no vocal removal — because a karaoke upload already
 /// is what the app would otherwise spend seconds trying to approximate.
+/// Lives in the sidebar rather than a sheet, so queueing songs never covers
+/// or interrupts what's playing — the whole point of a karaoke queue is that
+/// people line up the next song while the current one is still going.
 struct KaraokeSearchSheet: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
 
     @State private var query = ""
     @State private var results: [KaraokeSearchResult] = []
@@ -19,8 +21,7 @@ struct KaraokeSearchSheet: View {
     private var isConfigured: Bool { model.library.resolverConfiguration.canSearch }
 
     var body: some View {
-        NavigationStack {
-            Group {
+        Group {
                 if !isConfigured {
                     notConfigured
                 } else if isSearching {
@@ -43,20 +44,12 @@ struct KaraokeSearchSheet: View {
                     resultList
                 }
             }
-            .navigationTitle("Find a song")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(
-                text: $query,
-                placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "Song title, or title and artist"
-            )
-            .onSubmit(of: .search, runSearch)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
+        .searchable(
+            text: $query,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Song title, or title and artist"
+        )
+        .onSubmit(of: .search, runSearch)
     }
 
     // MARK: - States
@@ -118,7 +111,6 @@ struct KaraokeSearchSheet: View {
         } actions: {
             Button("Add the original instead") {
                 model.presentAddOriginal(prefilling: query)
-                dismiss()
             }
             .buttonStyle(.bordered)
         }
@@ -161,7 +153,6 @@ struct KaraokeSearchSheet: View {
     private func add(_ result: KaraokeSearchResult, playNow: Bool) {
         let track = model.library.addKaraokeVideo(result)
         if playNow {
-            dismiss()
             Task { await model.playNow(track) }
         } else {
             model.addToQueue(track)
@@ -198,6 +189,11 @@ private struct KaraokeResultRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    if let views = result.viewCountDescription {
+                        Text(views)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
                     if let duration = result.duration {
                         Text(TimeFormatting.string(from: duration))
                             .font(.caption)

@@ -61,31 +61,38 @@ public struct YouTubeDataAPISearchClient: KaraokeSearching {
 
         if candidates.isEmpty, let firstError { throw firstError }
 
-        let durations = (try? await durations(for: Array(candidates.keys))) ?? [:]
+        let details = (try? await details(for: Array(candidates.keys))) ?? [:]
 
-        let scored = candidates.values.map { item -> (SearchItem, TimeInterval?, KaraokeRanker.Ranking) in
-            let duration = durations[item.videoID]
+        let scored = candidates.values.map { item -> (SearchItem, VideoDetail?, KaraokeRanker.Ranking) in
+            let detail = details[item.videoID]
             return (
                 item,
-                duration,
-                KaraokeRanker.rank(title: item.title, channel: item.channel, duration: duration)
+                detail,
+                KaraokeRanker.rank(
+                    title: item.title, channel: item.channel, duration: detail?.duration
+                )
             )
         }
 
         return scored
-            // Anything scoring at or below zero is actively signalling "original
-            // vocal" or "live" — never worth showing in a karaoke app.
+            // Scoring decides what's *eligible* — anything at or below zero is
+            // signalling "original vocal" or "live" and never belongs in a
+            // karaoke app. Ordering is then by popularity, because among tracks
+            // that are all genuinely karaoke, the most-watched one is usually
+            // the best-produced one. Sorting by score instead would bury a
+            // million-view backing track under a keyword-stuffed title.
             .filter { $0.2.score > 0 }
-            .sorted { $0.2.score > $1.2.score }
+            .sorted { ($0.1?.viewCount ?? 0) > ($1.1?.viewCount ?? 0) }
             .prefix(limit)
-            .map { item, duration, ranking in
+            .map { item, detail, ranking in
                 KaraokeSearchResult(
                     videoID: item.videoID,
                     title: item.title,
                     channel: item.channel,
-                    duration: duration,
+                    duration: detail?.duration,
                     thumbnailURL: item.thumbnailURL,
-                    confidence: ranking.confidence
+                    confidence: ranking.confidence,
+                    viewCount: detail?.viewCount
                 )
             }
     }
@@ -120,18 +127,19 @@ public struct YouTubeDataAPISearchClient: KaraokeSearching {
         }
     }
 
-    /// Search results don't carry durations, so fetch them in one batched call.
-    private func durations(for videoIDs: [String]) async throws -> [String: TimeInterval] {
+    /// Search results carry neither duration nor view count, so fetch both in
+    /// one batched call. `videos.list` costs 1 unit against a search's 100.
+    private func details(for videoIDs: [String]) async throws -> [String: VideoDetail] {
         guard !videoIDs.isEmpty else { return [:] }
 
-        var result: [String: TimeInterval] = [:]
+        var result: [String: VideoDetail] = [:]
         // The API accepts up to 50 ids per call.
         for chunk in stride(from: 0, to: videoIDs.count, by: 50).map({
             Array(videoIDs[$0..<min($0 + 50, videoIDs.count)])
         }) {
             var components = URLComponents(string: "https://www.googleapis.com/youtube/v3/videos")
             components?.queryItems = [
-                URLQueryItem(name: "part", value: "contentDetails"),
+                URLQueryItem(name: "part", value: "contentDetails,statistics"),
                 URLQueryItem(name: "id", value: chunk.joined(separator: ",")),
                 URLQueryItem(name: "key", value: apiKey)
             ]
@@ -140,9 +148,10 @@ public struct YouTubeDataAPISearchClient: KaraokeSearching {
             let data = try await fetch(url)
             let payload = try decode(VideosResponse.self, from: data)
             for item in payload.items {
-                if let seconds = Self.parseISO8601Duration(item.contentDetails.duration) {
-                    result[item.id] = seconds
-                }
+                result[item.id] = VideoDetail(
+                    duration: Self.parseISO8601Duration(item.contentDetails.duration),
+                    viewCount: item.statistics?.viewCount.flatMap(Int.init)
+                )
             }
         }
         return result
@@ -212,6 +221,11 @@ public struct YouTubeDataAPISearchClient: KaraokeSearching {
 
     // MARK: - Payloads
 
+    struct VideoDetail {
+        let duration: TimeInterval?
+        let viewCount: Int?
+    }
+
     private struct SearchItem {
         let videoID: String
         let title: String
@@ -245,7 +259,11 @@ public struct YouTubeDataAPISearchClient: KaraokeSearching {
         struct Item: Decodable {
             let id: String
             let contentDetails: ContentDetails
+            let statistics: Statistics?
             struct ContentDetails: Decodable { let duration: String }
+            // viewCount arrives as a string, and is absent when the uploader
+            // has hidden their counts.
+            struct Statistics: Decodable { let viewCount: String? }
         }
     }
 
