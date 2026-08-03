@@ -12,6 +12,8 @@ struct ContentView: View {
     @State private var browser = YouTubeBrowserModel()
     @State private var isAskingForSearch = false
     @State private var searchQuery = ""
+    /// How far through the playlist we are, so a reload resumes in place.
+    @State private var position = 0
 
     var body: some View {
         @Bindable var model = model
@@ -57,30 +59,23 @@ struct ContentView: View {
                  + "Save button adds a song straight to your playlist.")
         }
         .onChange(of: model.configuration.sharedPlaylistID) {
+            position = 0
             if let playlist = model.playlist {
                 browser.loadPlaylist(playlist)
             }
         }
     }
 
-    /// Reloads the playlist once it runs out, so songs added while it was
-    /// playing get picked up.
+    /// Re-reads the playlist after every song.
     ///
-    /// YouTube plays the list it loaded, which is a snapshot. People add songs
-    /// from their phones all evening, and without this the night ends at
-    /// whatever the playlist held when it started.
-    ///
-    /// The delay distinguishes "the playlist is finished" from "YouTube is
-    /// moving to the next song", which look identical at the moment a video
-    /// ends: if the video changed on its own, there was nothing to fix.
+    /// YouTube plays the list it loaded, which is a snapshot — songs added from
+    /// phones during the evening never appear in it. Reloading at the next
+    /// position is the only way to see them, and it takes over advancing from
+    /// YouTube rather than racing it.
     private func playlistReachedEnd() {
         guard let playlist = model.playlist else { return }
-        let videoAtEnd = browser.currentVideoID
-        Task {
-            try? await Task.sleep(for: .seconds(6))
-            guard browser.currentVideoID == videoAtEnd else { return }
-            browser.loadPlaylist(playlist)
-        }
+        position += 1
+        browser.loadPlaylist(playlist, at: position)
     }
 
     /// Deliberately always visible rather than tap-to-reveal: a tap belongs to
@@ -116,7 +111,9 @@ struct ContentView: View {
 
             Button {
                 if let playlist = model.playlist {
-                    browser.loadPlaylist(playlist)
+                    // Back to the playlist re-reads it, so this doubles as the
+                    // manual refresh when someone has just added a song.
+                    browser.loadPlaylist(playlist, at: position)
                 } else {
                     browser.loadHome()
                 }

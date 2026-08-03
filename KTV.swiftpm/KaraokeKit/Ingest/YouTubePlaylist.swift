@@ -25,6 +25,16 @@ public struct YouTubePlaylist: Equatable, Hashable, Codable, Sendable {
         URL(string: "https://www.youtube.com/watch?list=\(listID)&playnext=1")!
     }
 
+    /// Watch URL resuming at `index` (0-based) in the playlist.
+    ///
+    /// Reloading with a position is how songs added mid-session get picked up:
+    /// YouTube plays the list it loaded, which is a snapshot, so the only way to
+    /// see additions is to fetch it again — and the only way to do that without
+    /// restarting the night is to say where to resume.
+    public func watchURL(index: Int) -> URL {
+        URL(string: "https://www.youtube.com/watch?list=\(listID)&index=\(max(0, index) + 1)")!
+    }
+
     /// The playlist's own page, for sharing or editing.
     public var pageURL: URL {
         URL(string: "https://www.youtube.com/playlist?list=\(listID)")!

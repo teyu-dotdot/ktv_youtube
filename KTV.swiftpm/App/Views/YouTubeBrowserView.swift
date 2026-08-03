@@ -95,6 +95,11 @@ final class YouTubeBrowserModel {
         webView?.load(URLRequest(url: playlist.watchURL))
     }
 
+    /// Resumes a playlist at a position, re-reading it from YouTube on the way.
+    func loadPlaylist(_ playlist: YouTubePlaylist, at index: Int) {
+        webView?.load(URLRequest(url: playlist.watchURL(index: index)))
+    }
+
     /// Sends audio to one channel or both. See `channelScript`.
     func setChannelMode(_ mode: AudioChannelMode) {
         audioRoutingError = nil
@@ -159,16 +164,24 @@ struct YouTubeBrowserView: UIViewRepresentable {
                 forMainFrameOnly: true
             )
         )
+        // Channel routing is a feature, not a page tweak. It was gated behind
+        // pageTweaksEnabled, which defaults to off — so ktvSetChannelMode was
+        // never defined and Left/Right did nothing.
+        controller.addUserScript(
+            WKUserScript(
+                source: Self.channelScript,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            )
+        )
         if pageTweaksEnabled {
-            for source in [Self.declutterScript, Self.channelScript] {
-                controller.addUserScript(
-                    WKUserScript(
-                        source: source,
-                        injectionTime: .atDocumentEnd,
-                        forMainFrameOnly: true
-                    )
+            controller.addUserScript(
+                WKUserScript(
+                    source: Self.declutterScript,
+                    injectionTime: .atDocumentEnd,
+                    forMainFrameOnly: true
                 )
-            }
+            )
         }
 
         let configuration = WKWebViewConfiguration()
@@ -273,6 +286,8 @@ struct YouTubeBrowserView: UIViewRepresentable {
                 model.absorbDiagnostics(body)
             case "audioerror":
                 model.reportAudioRoutingError(body["message"] as? String)
+            case "audiostate":
+                model.absorbDiagnostics(body)
             default:
                 break
             }
@@ -546,10 +561,16 @@ struct YouTubeBrowserView: UIViewRepresentable {
         mode = next;
         // "Both" is the untouched path: if no graph exists yet, leave it that way.
         if (mode === 'both' && !context) { return; }
-        if (buildGraph()) {
-          if (context && context.state === 'suspended') { context.resume(); }
-          route();
+        if (!buildGraph()) { return; }
+        // Must resume before routing: a suspended context produces silence,
+        // which is indistinguishable from the switch doing nothing.
+        if (context && context.state !== 'running') {
+          context.resume().then(route).catch(function (e) {
+            post({ event: 'audioerror', message: 'resume failed: ' + e });
+          });
         }
+        route();
+        post({ event: 'audiostate', mode: mode, state: context ? context.state : 'none' });
       };
 
       // YouTube swaps the video element between songs, which leaves the graph
@@ -576,7 +597,21 @@ struct YouTubeBrowserView: UIViewRepresentable {
           window.webkit.messageHandlers.ktv.postMessage(payload);
         }
       }
+      // YouTube's fullscreen presents above everything, including this app's
+      // controls, so the channel switch becomes unreachable. The app is already
+      // full screen; its button only takes that away.
+      function hideFullscreenButton() {
+        if (document.getElementById('ktv-nofs')) { return; }
+        var style = document.createElement('style');
+        style.id = 'ktv-nofs';
+        style.textContent =
+          '.ytp-fullscreen-button, .ytp-size-button,' +
+          'button.fullscreen-icon, .ytm-fullscreen-button { display: none !important; }';
+        (document.head || document.documentElement).appendChild(style);
+      }
+
       function attach() {
+        hideFullscreenButton();
         var video = document.querySelector('video');
         if (!video || video.__ktvHooked) { return; }
         video.__ktvHooked = true;
