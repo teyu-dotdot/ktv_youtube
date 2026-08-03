@@ -197,27 +197,33 @@ struct YouTubeBrowserView: UIViewRepresentable {
         }
     }
 
-    /// Reduces a watch page to nothing but the video, and turns YouTube's own
-    /// autoplay off.
+    /// Strips a watch page back to the player and lets it use the full width.
     ///
-    /// Two problems, one script. YouTube's up-next rail decides what plays
-    /// next, which this app already has a queue for; and once the rail is
-    /// hidden the player keeps the width it was laid out with, leaving a black
-    /// margin where the rail used to be. So the player is stretched to fill the
-    /// pane rather than merely uncovered.
+    /// ## Widen, never set heights
     ///
-    /// Scoped to `/watch` on purpose. The same rules applied to search results
-    /// or the home page would hide the very things you browse with, so a class
-    /// on `<html>` gates them and is re-evaluated as you navigate — YouTube is
-    /// a single-page app, so the URL changes without a reload.
+    /// An earlier version forced `height: 100%` down the container chain to
+    /// fill vertically, and blanked the video. A percentage height resolves
+    /// against the parent's height, so the instant one element in the real DOM
+    /// isn't in the selector list the chain breaks and it computes to zero —
+    /// a black pane with player controls that flash and disappear.
     ///
-    /// Selectors are matched by substring and cover both the `ytd-` (desktop)
-    /// and `ytm-` (mobile) component families, because the layout served
-    /// depends on window size and an iPad in landscape sits on the boundary.
+    /// So this only ever sets widths. The player keeps its own aspect ratio and
+    /// grows taller because it got wider, which reaches the same place without
+    /// depending on a DOM this code can't see. The `<video>` element is left
+    /// alone entirely: YouTube sizes it in pixels to letterbox correctly, and
+    /// that arithmetic is better than anything guessed from here.
+    ///
+    /// A synthetic resize event is dispatched afterwards because that sizing
+    /// only re-runs when YouTube believes the container changed; widening it
+    /// from a stylesheet doesn't tell it anything.
+    ///
+    /// Scoped to `/watch` behind a class on `<html>`. The same rules on search
+    /// or the home page would hide what you browse with, and YouTube navigates
+    /// without reloading, so the gate is re-evaluated rather than set at load.
     private static let declutterScript = """
     (function () {
       var css = [
-        /* Anything that isn't the player, on a watch page only. */
+        /* Everything that isn't the player, on a watch page only. */
         'html.ktv-watch [id*="related" i], html.ktv-watch [class*="related" i],',
         'html.ktv-watch [id*="secondary" i], html.ktv-watch [class*="secondary" i],',
         'html.ktv-watch #comments, html.ktv-watch ytd-comments,',
@@ -230,29 +236,18 @@ struct YouTubeBrowserView: UIViewRepresentable {
         'html.ktv-watch #masthead, html.ktv-watch ytd-masthead,',
         'html.ktv-watch ytm-mobile-topbar-renderer { display: none !important; }',
 
-        /* Let the player have the whole pane. */
-        'html.ktv-watch, html.ktv-watch body {',
-        '  height: 100% !important; margin: 0 !important; padding: 0 !important;',
-        '  overflow: hidden !important; background: #000 !important; }',
+        /* Width only. Heights are deliberately untouched — see the note above. */
         'html.ktv-watch #columns, html.ktv-watch #primary,',
         'html.ktv-watch #primary-inner, html.ktv-watch ytd-watch-flexy,',
         'html.ktv-watch ytm-watch, html.ktv-watch .watch-content,',
         'html.ktv-watch #player, html.ktv-watch #player-container,',
-        'html.ktv-watch #player-container-outer, html.ktv-watch #player-container-inner,',
-        'html.ktv-watch .player-container, html.ktv-watch ytd-player,',
-        'html.ktv-watch #movie_player, html.ktv-watch .html5-video-player {',
+        'html.ktv-watch #player-container-outer,',
+        'html.ktv-watch #player-container-inner,',
+        'html.ktv-watch .player-container {',
         '  width: 100% !important; max-width: none !important;',
-        '  height: 100% !important; max-height: none !important;',
-        '  min-width: 0 !important; margin: 0 !important; padding: 0 !important;',
-        '  left: 0 !important; top: 0 !important; }',
+        '  min-width: 0 !important; margin: 0 !important; padding: 0 !important; }',
 
-        /* The video element itself is positioned in pixels by YouTube's own
-           resize code; !important beats those inline styles. */
-        'html.ktv-watch video, html.ktv-watch .video-stream,',
-        'html.ktv-watch .html5-main-video {',
-        '  width: 100% !important; height: 100% !important;',
-        '  left: 0 !important; top: 0 !important;',
-        '  object-fit: contain !important; }'
+        'html.ktv-watch body { margin: 0 !important; background: #000 !important; }'
       ].join('\\n');
 
       function injectCSS() {
@@ -264,9 +259,20 @@ struct YouTubeBrowserView: UIViewRepresentable {
       }
 
       // Only strip watch pages; browsing needs its chrome.
+      var wasWatching = null;
       function applyMode() {
         var watching = location.pathname.indexOf('/watch') === 0;
         document.documentElement.classList.toggle('ktv-watch', watching);
+        if (watching !== wasWatching) {
+          wasWatching = watching;
+          nudgeLayout();
+        }
+      }
+
+      // The player only re-fits the video when it thinks its container moved,
+      // and a stylesheet widening it says nothing. This does.
+      function nudgeLayout() {
+        try { window.dispatchEvent(new Event('resize')); } catch (e) {}
       }
 
       // Autoplay lives behind a toggle whose markup differs by layout, so try
@@ -286,10 +292,13 @@ struct YouTubeBrowserView: UIViewRepresentable {
 
       function tick() { injectCSS(); applyMode(); disableAutoplay(); }
       tick();
-      // YouTube resizes the player after its own layout settles, and navigates
-      // without reloading, so this has to keep running rather than fire once.
+      // YouTube lays out after its own scripts settle and navigates without
+      // reloading, so this keeps running rather than firing once.
       setInterval(tick, 1000);
-      window.addEventListener('resize', tick);
+      // A few nudges early on, while the player is still being built.
+      [400, 1200, 2500].forEach(function (delay) {
+        setTimeout(nudgeLayout, delay);
+      });
     })();
     """
 
