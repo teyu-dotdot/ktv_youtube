@@ -119,21 +119,52 @@ public struct PlaybackQueue: Equatable, Sendable {
 
     /// Removes entries from `upNext` by their offsets in that list.
     public mutating func removeUpNext(at offsets: IndexSet) {
-        guard let currentIndex else {
-            entries.remove(atOffsets: offsets)
-            return
+        let base = (currentIndex ?? -1) + 1
+        let absolute = offsets
+            .map { $0 + base }
+            .filter { entries.indices.contains($0) }
+            .sorted(by: >)     // back to front, so earlier indices stay valid
+        for index in absolute {
+            entries.remove(at: index)
         }
-        let base = currentIndex + 1
-        let absolute = IndexSet(offsets.map { $0 + base }.filter { entries.indices.contains($0) })
-        entries.remove(atOffsets: absolute)
     }
 
     /// Reorders `upNext`. Offsets and destination are relative to that list.
     public mutating func moveUpNext(from source: IndexSet, to destination: Int) {
         let base = (currentIndex ?? -1) + 1
-        var reordered = upNext
-        reordered.move(fromOffsets: source, toOffset: destination)
+        let reordered = Self.moving(upNext, from: source, to: destination)
         entries.replaceSubrange(base..., with: reordered)
+    }
+
+    /// SwiftUI's `move(fromOffsets:toOffset:)`, implemented here rather than
+    /// imported.
+    ///
+    /// That method — and `remove(atOffsets:)` — look like Standard Library
+    /// collection APIs but are actually SwiftUI extensions. Using them would
+    /// drag SwiftUI into this package, which is meant to stay platform-free so
+    /// the DSP and the queue can be tested anywhere.
+    ///
+    /// The subtlety worth preserving: `destination` indexes the array *before*
+    /// anything is removed, so it has to be adjusted by however many moved
+    /// items sat in front of it.
+    static func moving<Element>(
+        _ elements: [Element],
+        from source: IndexSet,
+        to destination: Int
+    ) -> [Element] {
+        var result = elements
+        let valid = source.filter { result.indices.contains($0) }.sorted()
+        guard !valid.isEmpty else { return result }
+
+        let moving = valid.map { result[$0] }
+        let removedBeforeDestination = valid.filter { $0 < destination }.count
+
+        for index in valid.reversed() {
+            result.remove(at: index)
+        }
+        let insertAt = max(0, min(result.count, destination - removedBeforeDestination))
+        result.insert(contentsOf: moving, at: insertAt)
+        return result
     }
 
     /// Empties everything after the current song.

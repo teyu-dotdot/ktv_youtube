@@ -199,6 +199,52 @@ final class PlaybackQueueTests: XCTestCase {
         XCTAssertEqual(queue.current, b)
     }
 
+    // MARK: - The reimplemented SwiftUI collection helpers
+
+    /// `move(fromOffsets:toOffset:)` is a SwiftUI extension, not a Standard
+    /// Library one, so the queue implements it. These cases pin the semantics
+    /// SwiftUI uses — notably that `destination` indexes the array *before*
+    /// anything is removed.
+    func testMovingMatchesSwiftUISemantics() {
+        let cases: [(input: [String], from: [Int], to: Int, expected: [String])] = [
+            (["b", "c", "d"], [2], 0, ["d", "b", "c"]),
+            (["b", "c", "d"], [0], 3, ["c", "d", "b"]),
+            (["a", "b", "c", "d"], [0], 2, ["b", "a", "c", "d"]),
+            (["a", "b", "c", "d"], [3], 1, ["a", "d", "b", "c"]),
+            (["a", "b", "c", "d"], [0, 1], 4, ["c", "d", "a", "b"]),
+            (["a", "b", "c", "d"], [1, 3], 0, ["b", "d", "a", "c"]),
+            (["a", "b", "c"], [1], 1, ["a", "b", "c"])
+        ]
+        for testCase in cases {
+            let moved = PlaybackQueue.moving(
+                testCase.input, from: IndexSet(testCase.from), to: testCase.to
+            )
+            XCTAssertEqual(
+                moved, testCase.expected,
+                "move(\(testCase.input), from: \(testCase.from), to: \(testCase.to))"
+            )
+        }
+    }
+
+    func testMovingIgnoresOutOfRangeOffsets() {
+        XCTAssertEqual(
+            PlaybackQueue.moving(["a", "b"], from: IndexSet(integer: 9), to: 0),
+            ["a", "b"]
+        )
+        XCTAssertEqual(
+            PlaybackQueue.moving([String](), from: IndexSet(integer: 0), to: 0),
+            []
+        )
+    }
+
+    func testRemovingSeveralUpNextEntriesAtOnce() {
+        var queue = self.queue([a, b, c, d, e], current: 0)
+        // Offsets into upNext == [b, c, d, e]; drop c and e.
+        queue.removeUpNext(at: IndexSet([1, 3]))
+        XCTAssertEqual(queue.entries, [a, b, d])
+        XCTAssertEqual(queue.current, a)
+    }
+
     func testRemoveAll() {
         var queue = self.queue([a, b], current: 1)
         queue.removeAll()

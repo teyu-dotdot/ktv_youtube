@@ -106,10 +106,6 @@ public final class KaraokePlayer {
         engine.attach(timePitch)
     }
 
-    deinit {
-        displayLinkTimer?.invalidate()
-    }
-
     // MARK: - Loading
 
     /// Loads a separated pair of stems and gets the graph ready to play.
@@ -301,7 +297,15 @@ public final class KaraokePlayer {
 
     private func startPositionUpdates() {
         stopPositionUpdates()
-        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        // The timer invalidates itself once the player is gone, rather than
+        // being torn down in `deinit`. A deinit is nonisolated, so it can't
+        // touch a main-actor property, and the run loop holds the timer alive
+        // regardless of what happens to us.
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] timer in
+            guard self != nil else {
+                timer.invalidate()
+                return
+            }
             Task { @MainActor in self?.updateCurrentTime() }
         }
         RunLoop.main.add(timer, forMode: .common)
