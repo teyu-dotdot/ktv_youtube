@@ -321,6 +321,7 @@ struct YouTubeBrowserView: UIViewRepresentable {
 
       var protectedCount = 0;
       var hiddenCount = 0;
+      var waitedForVideo = 0;
 
       function post(payload) {
         if (window.webkit && window.webkit.messageHandlers
@@ -342,25 +343,57 @@ struct YouTubeBrowserView: UIViewRepresentable {
       }
 
       // Hide the clutter, but never anything the video lives inside.
-      function hideClutter() {
-        if (!isWatching()) { return; }
-        var video = document.querySelector('video');
-        var nodes = document.querySelectorAll(CLUTTER);
+      var hiddenNodes = [];
+
+      function unhideAll() {
+        for (var i = 0; i < hiddenNodes.length; i++) {
+          hiddenNodes[i].style.removeProperty('display');
+        }
+        hiddenNodes = [];
         hiddenCount = 0;
+      }
+
+      function hideClutter() {
+        if (!isWatching()) { unhideAll(); return; }
+
+        var video = document.querySelector('video');
+
+        // Nothing is hidden until the player exists, and this is the whole
+        // ballgame. Before it does, there is no way to tell which containers
+        // the player is about to be built inside — and hiding one stops it
+        // ever being built. That failure cannot recover on its own: the check
+        // that would protect the player depends on the very element that was
+        // prevented from existing, so it stays null forever and the container
+        // stays hidden forever. A black pane, permanently.
+        if (!video) {
+          waitedForVideo++;
+          // If the player still hasn't appeared after a while, something else
+          // is wrong and whatever is hidden isn't helping anyone see it.
+          if (waitedForVideo > 6) { unhideAll(); }
+          return;
+        }
+        waitedForVideo = 0;
+
+        var nodes = document.querySelectorAll(CLUTTER);
         protectedCount = 0;
         for (var i = 0; i < nodes.length; i++) {
           var node = nodes[i];
-          if (video && node.contains(video)) { protectedCount++; continue; }
+          // Never hide anything the player lives inside.
+          if (node.contains(video)) { protectedCount++; continue; }
           if (node.style.display !== 'none') {
             node.style.setProperty('display', 'none', 'important');
+            hiddenNodes.push(node);
           }
-          hiddenCount++;
         }
+        hiddenCount = hiddenNodes.length;
       }
 
       var wasWatching = null;
       function applyMode() {
-        var watching = isWatching();
+        // Gated on the player existing for the same reason the hiding is:
+        // restyling containers the player hasn't been built into yet is how
+        // this went wrong in the first place.
+        var watching = isWatching() && !!document.querySelector('video');
         document.documentElement.classList.toggle('ktv-watch', watching);
         if (watching !== wasWatching) {
           wasWatching = watching;
@@ -404,6 +437,7 @@ struct YouTubeBrowserView: UIViewRepresentable {
           readyState: video ? video.readyState : null,
           hidden: hiddenCount,
           protectedAncestors: protectedCount,
+          waitedForVideo: waitedForVideo,
           viewportWidth: Math.round(window.innerWidth),
           viewportHeight: Math.round(window.innerHeight)
         });
