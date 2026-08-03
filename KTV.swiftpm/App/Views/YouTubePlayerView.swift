@@ -147,7 +147,12 @@ struct YouTubePlayerView: UIViewRepresentable {
               player = new YT.Player('player', {
                 videoId: '\(videoID)',
                 playerVars: {
-                  playsinline: 1, rel: 0, modestbranding: 1, autoplay: 1, fs: 1
+                  playsinline: 1, rel: 0, modestbranding: 1, autoplay: 1, fs: 1,
+                  // The page is served from a base URL of youtube.com, and the
+                  // player checks that the declared origin matches. Leaving
+                  // these out makes the API's origin check unreliable inside a
+                  // WKWebView loaded from an HTML string.
+                  enablejsapi: 1, origin: 'https://www.youtube.com'
                 },
                 events: {
                   onReady: function () { send({ event: 'ready' }); },

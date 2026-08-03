@@ -205,17 +205,57 @@ final class AppModel {
         skipToNext()
     }
 
-    /// The embedded player couldn't play a video — removed, private, or
-    /// embedding turned off by the uploader. Don't strand the room on it.
+    /// The embedded player couldn't play a video. Don't strand the room on it.
+    ///
+    /// YouTube's IFrame API reports:
+    ///   2   — the video id was rejected
+    ///   5   — the HTML5 player failed
+    ///   100 — the video is gone or private
+    ///   101 — the uploader disabled embedding
+    ///   150 — same as 101
+    ///
+    /// 101 and 150 are by far the most common on karaoke uploads: rights
+    /// holders routinely allow a video on youtube.com but not inside anyone
+    /// else's app. Search filters on `videoEmbeddable`, but that flag lies
+    /// often enough that this path has to exist.
     func karaokeVideoFailed(code: Int) {
         let title = selectedTrack?.title ?? "That video"
+        let reason: String
+        switch code {
+        case 101, 150:
+            reason = "the uploader doesn't allow it to be played inside other apps"
+        case 100:
+            reason = "it's been removed or made private"
+        case 2:
+            reason = "YouTube rejected the video id"
+        case 5:
+            reason = "YouTube's player failed to start"
+        default:
+            reason = "YouTube reported error \(code)"
+        }
+
+        lastVideoErrorCode = code
         if queue.hasNext {
-            errorMessage = "\(title) can't be played here, so it was skipped."
+            errorMessage = "Skipped \(title) — \(reason)."
             skipToNext()
         } else {
-            errorMessage = "\(title) can't be played here. The uploader may have "
-                + "disabled embedding, or the video may have been removed."
+            errorMessage = "\(title) can't play here because \(reason). "
+                + "Tap Open in YouTube to watch it there."
         }
+    }
+
+    /// Set when the embedded player last refused a video, so the UI can offer
+    /// the way out rather than just apologising.
+    private(set) var lastVideoErrorCode: Int?
+
+    func clearVideoError() {
+        lastVideoErrorCode = nil
+    }
+
+    /// The watch URL for the current track, for handing off to the YouTube app.
+    var currentTrackWatchURL: URL? {
+        guard let videoID = selectedTrack?.source.youTubeVideoID else { return nil }
+        return YouTubeLink(videoID: videoID).canonicalURL
     }
 
     /// Karaoke videos autoplay themselves; the local engine needs telling.
@@ -238,6 +278,7 @@ final class AppModel {
         selectedTrackID = track.id
         isMonoSource = false
         preparation = nil
+        lastVideoErrorCode = nil
 
         guard !track.source.playsInEmbeddedPlayer else { return }
         guard track.isDownloaded else { return }

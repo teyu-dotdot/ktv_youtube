@@ -59,6 +59,10 @@ struct KaraokeVideoPlayerView: View {
 
     private var controls: some View {
         VStack(spacing: 10) {
+            if model.lastVideoErrorCode != nil {
+                embedRefusedBanner
+            }
+
             HStack(spacing: 40) {
                 Button {
                     model.playPrevious()
@@ -86,6 +90,11 @@ struct KaraokeVideoPlayerView: View {
                     } label: {
                         Label("Show queue", systemImage: "list.bullet")
                     }
+                    if let url = model.currentTrackWatchURL {
+                        Link(destination: url) {
+                            Label("Open in YouTube", systemImage: "arrow.up.forward.app")
+                        }
+                    }
                 } label: {
                     Image(systemName: "list.bullet")
                         .font(.title2)
@@ -105,6 +114,38 @@ struct KaraokeVideoPlayerView: View {
             .padding(.horizontal, horizontalSizeClass == .regular ? 40 : 20)
             .padding(.bottom, 12)
         }
+    }
+
+    /// Shown when YouTube refuses to play the video in an embed. Common on
+    /// music uploads, and nothing the app can do about it — so offer the door.
+    private var embedRefusedBanner: some View {
+        VStack(spacing: 8) {
+            Label(
+                "YouTube won't play this one inside another app.",
+                systemImage: "exclamationmark.triangle"
+            )
+            .font(.footnote)
+
+            HStack(spacing: 12) {
+                if let url = model.currentTrackWatchURL {
+                    Link(destination: url) {
+                        Label("Open in YouTube", systemImage: "arrow.up.forward.app")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                if model.queue.hasNext {
+                    Button("Skip") { model.skipToNext() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, horizontalSizeClass == .regular ? 40 : 20)
+        .padding(.top, 12)
     }
 }
 
