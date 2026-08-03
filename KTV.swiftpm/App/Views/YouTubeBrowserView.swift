@@ -140,6 +140,8 @@ struct YouTubeBrowserView: UIViewRepresentable {
     /// guessing; being able to switch the guesses off answers "is any of this
     /// mine?" in one attempt.
     var pageTweaksEnabled: Bool = true
+    /// When true, video plays in iOS's fullscreen player rather than inline.
+    var playsFullscreen: Bool = false
 
     func makeUIView(context: Context) -> WKWebView {
         let controller = WKUserContentController()
@@ -168,9 +170,10 @@ struct YouTubeBrowserView: UIViewRepresentable {
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
-        // Without this the video goes fullscreen instead of sitting in the
-        // layout above the queue.
-        configuration.allowsInlineMediaPlayback = true
+        // Inline keeps the video in the layout above the queue. Fullscreen
+        // hands it to the system player, which composites separately — the
+        // fallback when inline renders black.
+        configuration.allowsInlineMediaPlayback = !playsFullscreen
         configuration.mediaTypesRequiringUserActionForPlayback = []
         // A persistent store on purpose: signing in to YouTube makes your own
         // playlists reachable, and re-entering a password every launch would

@@ -22,11 +22,12 @@ struct KaraokeVideoPlayerView: View {
                 YouTubeBrowserView(
                     model: browser,
                     initialVideoID: track.source.youTubeVideoID,
-                    pageTweaksEnabled: model.pageTweaksEnabled
+                    pageTweaksEnabled: model.pageTweaksEnabled,
+                    playsFullscreen: model.playsFullscreen
                 )
-                // Scripts are registered when the web view is built, so
-                // flipping the toggle has to build a new one.
-                .id(model.pageTweaksEnabled)
+                // Both settings are read when the web view is built, so
+                // flipping either has to build a new one.
+                .id("\(model.pageTweaksEnabled)-\(model.playsFullscreen)")
                 .background(.black)
 
                 expandButton
@@ -230,6 +231,12 @@ struct KaraokeVideoPlayerView: View {
                     Label("Reload", systemImage: "arrow.clockwise")
                 }
                 Divider()
+                Toggle(isOn: Binding(
+                    get: { model.playsFullscreen },
+                    set: { model.playsFullscreen = $0 }
+                )) {
+                    Label("Play video fullscreen", systemImage: "arrow.up.left.and.arrow.down.right")
+                }
                 Toggle(isOn: Binding(
                     get: { model.pageTweaksEnabled },
                     set: { model.pageTweaksEnabled = $0 }

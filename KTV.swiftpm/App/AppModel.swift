@@ -279,8 +279,22 @@ final class AppModel {
     ///
     /// Turning this off is the fastest way to find out whether a rendering
     /// problem belongs to this app or to the page underneath it.
-    var pageTweaksEnabled: Bool = UserDefaults.standard.object(forKey: "player.pageTweaks") as? Bool ?? true {
+    /// Off by default. Five attempts at tidying the page produced a black
+    /// player and no evidence the tidying was ever the cause, so the default is
+    /// now plain YouTube — a working video matters and the decluttering does
+    /// not. Turn it on once video is confirmed working.
+    var pageTweaksEnabled: Bool = UserDefaults.standard.object(forKey: "player.pageTweaks") as? Bool ?? false {
         didSet { UserDefaults.standard.set(pageTweaksEnabled, forKey: "player.pageTweaks") }
+    }
+
+    /// Plays video in iOS's own fullscreen player instead of inline.
+    ///
+    /// Inline playback composites the video into the web page's layer tree.
+    /// Fullscreen hands it to the system player instead — a completely
+    /// different path, and the obvious thing to try when inline renders black.
+    /// For karaoke it's arguably the better mode anyway.
+    var playsFullscreen: Bool = UserDefaults.standard.object(forKey: "player.fullscreen") as? Bool ?? false {
+        didSet { UserDefaults.standard.set(playsFullscreen, forKey: "player.fullscreen") }
     }
 
     func playNext(_ track: Track) {
