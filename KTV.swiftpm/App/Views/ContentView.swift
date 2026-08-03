@@ -33,6 +33,14 @@ struct ContentView: View {
             floatingBar
         }
         .statusBarHidden()
+        .onAppear {
+            browser.onEnded = { playlistReachedEnd() }
+            // A karaoke night is long gaps of nobody touching the iPad. Video
+            // playback usually holds the screen awake on its own, but not
+            // reliably from inside a web view.
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
         .sheet(isPresented: $model.isShowingSettings) {
             SettingsSheet()
         }
@@ -52,6 +60,26 @@ struct ContentView: View {
             if let playlist = model.playlist {
                 browser.loadPlaylist(playlist)
             }
+        }
+    }
+
+    /// Reloads the playlist once it runs out, so songs added while it was
+    /// playing get picked up.
+    ///
+    /// YouTube plays the list it loaded, which is a snapshot. People add songs
+    /// from their phones all evening, and without this the night ends at
+    /// whatever the playlist held when it started.
+    ///
+    /// The delay distinguishes "the playlist is finished" from "YouTube is
+    /// moving to the next song", which look identical at the moment a video
+    /// ends: if the video changed on its own, there was nothing to fix.
+    private func playlistReachedEnd() {
+        guard let playlist = model.playlist else { return }
+        let videoAtEnd = browser.currentVideoID
+        Task {
+            try? await Task.sleep(for: .seconds(6))
+            guard browser.currentVideoID == videoAtEnd else { return }
+            browser.loadPlaylist(playlist)
         }
     }
 

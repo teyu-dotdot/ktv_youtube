@@ -33,6 +33,16 @@ The list icon returns to the playlist when you've browsed away.
   share the playlist from a phone, show the code, point the iPad at it.
 - **Settings** for the playlist and an API key.
 
+## The split
+
+Searching and queueing happen on phones, in the YouTube app everyone already
+has. The iPad only plays. That's why there's no search panel and no queue view
+here — they'd be a second, worse copy of something each guest already has in
+their pocket.
+
+The playlist reloads when it runs out, so songs added during the evening get
+picked up rather than the night ending on whatever the list held at the start.
+
 ## How the shared queue works
 
 Make a playlist in the YouTube app, set it to Unlisted, then **Edit ▸
