@@ -198,3 +198,47 @@ final class SearchBackendSelectionTests: XCTestCase {
         XCTAssertTrue(configuration.makeSearchClient() is KaraokeSearchClient)
     }
 }
+
+
+/// Titles arriving from the browser are page titles, not clean song names.
+/// Mirrors AppModel.cleanYouTubePageTitle; kept here because that logic decides
+/// what ends up in the library list.
+final class YouTubePageTitleTests: XCTestCase {
+    private func clean(_ raw: String?) -> String? {
+        guard var title = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else { return nil }
+        for suffix in [" - YouTube", " – YouTube", " — YouTube"] where title.hasSuffix(suffix) {
+            title.removeLast(suffix.count)
+            break
+        }
+        if title.hasPrefix("("), let close = title.firstIndex(of: ")"),
+           title[title.index(after: title.startIndex)..<close].allSatisfy(\.isNumber) {
+            title = String(title[title.index(after: close)...])
+        }
+        let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
+    }
+
+    func testStripsTheYouTubeSuffix() {
+        XCTAssertEqual(
+            clean("Ed Sheeran - Perfect (Karaoke Version) - YouTube"),
+            "Ed Sheeran - Perfect (Karaoke Version)"
+        )
+        XCTAssertEqual(clean("좋은 날 MR 노래방 – YouTube"), "좋은 날 MR 노래방")
+    }
+
+    /// A signed-in watch page prefixes the title with an unread count.
+    func testStripsTheNotificationBadge() {
+        XCTAssertEqual(clean("(3) 告白氣球 KTV伴奏 - YouTube"), "告白氣球 KTV伴奏")
+    }
+
+    func testLeavesRealParenthesesAlone() {
+        XCTAssertEqual(clean("(not a badge) song - YouTube"), "(not a badge) song")
+    }
+
+    func testHandlesNothingUseful() {
+        XCTAssertNil(clean(nil))
+        XCTAssertNil(clean(""))
+        XCTAssertNil(clean("   "))
+    }
+}

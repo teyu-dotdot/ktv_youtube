@@ -1,151 +1,145 @@
 import SwiftUI
 import KaraokeKit
 
-/// Plays a karaoke video in YouTube's own embedded player.
+/// The karaoke screen: youtube.com in a web view, driven by the queue.
 ///
-/// The app's best-quality path, and the one that needs the least machinery: the
-/// instrumental is the real one the karaoke producer made, the lyrics are burned
-/// into the video with proper timing, and nothing has to be downloaded, decoded
-/// or analysed. The trade-off is that the audio is sealed inside WebKit — there's
-/// no way to reach the samples, so no key change.
+/// Doubles as a browser on purpose. YouTube's own search is better than
+/// anything this app can rank, and a video found by browsing can be dropped
+/// straight into the queue — so discovery and playback are the same screen
+/// rather than two.
 struct KaraokeVideoPlayerView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let track: Track
 
+    @State private var browser = YouTubeBrowserModel()
+
     var body: some View {
         VStack(spacing: 0) {
-            video
+            YouTubeBrowserView(model: browser, initialVideoID: track.source.youTubeVideoID)
+                .background(.black)
+
+            Divider()
             controls
             Divider()
             UpNextStrip()
         }
         .navigationTitle(track.title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button(role: .destructive) {
-                        model.delete(track)
-                    } label: {
-                        Label("Remove from library", systemImage: "trash")
-                    }
-                } label: {
-                    Label("More", systemImage: "ellipsis.circle")
-                }
+        .toolbar { toolbarContent }
+        .onAppear {
+            browser.onEnded = { model.songFinished() }
+        }
+        .onChange(of: track.id) {
+            // The queue moved on — follow it.
+            if let videoID = track.source.youTubeVideoID {
+                browser.load(videoID: videoID)
             }
         }
     }
 
-    @ViewBuilder
-    private var video: some View {
-        if let videoID = track.source.youTubeVideoID {
-            YouTubePlayerView(
-                videoID: videoID,
-                onEnded: { model.songFinished() },
-                onError: { code in model.karaokeVideoFailed(code: code) }
-            )
-            .aspectRatio(16.0 / 9.0, contentMode: .fit)
-            .frame(maxWidth: .infinity)
-            .background(.black)
-        } else {
-            ContentUnavailableView(
-                "Video unavailable",
-                systemImage: "exclamationmark.triangle",
-                description: Text("This track is missing its video id.")
-            )
-        }
-    }
+    // MARK: - Controls
 
     private var controls: some View {
-        VStack(spacing: 10) {
-            if model.lastVideoErrorCode != nil {
-                embedRefusedBanner
+        HStack(spacing: 20) {
+            Button {
+                browser.goBack()
+            } label: {
+                Image(systemName: "chevron.backward")
             }
+            .disabled(!browser.canGoBack)
+            .accessibilityLabel("Back")
 
-            HStack(spacing: 40) {
-                Button {
-                    model.playPrevious()
-                } label: {
-                    Image(systemName: "backward.end.fill")
-                        .font(.title2)
-                }
-                .disabled(!model.queue.hasPrevious)
-                .accessibilityLabel("Previous song")
-
-                Button {
-                    model.skipToNext()
-                } label: {
-                    Label("Skip", systemImage: "forward.end.fill")
-                        .font(.headline)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(!model.queue.hasNext)
-                .accessibilityLabel("Skip to next song")
-
-                Menu {
-                    Button {
-                        model.presentQueue()
-                    } label: {
-                        Label("Show queue", systemImage: "list.bullet")
-                    }
-                    if let url = model.currentTrackWatchURL {
-                        Link(destination: url) {
-                            Label("Open in YouTube", systemImage: "arrow.up.forward.app")
-                        }
-                    }
-                } label: {
-                    Image(systemName: "list.bullet")
-                        .font(.title2)
-                }
-                .accessibilityLabel("Queue")
+            Button {
+                model.playPrevious()
+            } label: {
+                Image(systemName: "backward.end.fill")
             }
-            .padding(.top, 14)
+            .disabled(!model.queue.hasPrevious)
+            .accessibilityLabel("Previous song")
 
-            Label(
-                "Karaoke version — the backing track is the real instrumental, "
-                + "so nothing needed removing. Original key.",
-                systemImage: "checkmark.seal"
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, horizontalSizeClass == .regular ? 40 : 20)
-            .padding(.bottom, 12)
+            Spacer(minLength: 0)
+
+            addCurrentVideoButton
+
+            Spacer(minLength: 0)
+
+            Button {
+                model.presentQueue()
+            } label: {
+                Image(systemName: "list.bullet")
+            }
+            .accessibilityLabel("Queue")
+
+            Button {
+                model.skipToNext()
+            } label: {
+                Label("Skip", systemImage: "forward.end.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!model.queue.hasNext)
+            .accessibilityLabel("Skip to next song")
+        }
+        .padding(.horizontal, horizontalSizeClass == .regular ? 24 : 14)
+        .padding(.vertical, 10)
+    }
+
+    /// Whatever YouTube is showing right now can be queued, which is what makes
+    /// browsing useful rather than a detour.
+    @ViewBuilder
+    private var addCurrentVideoButton: some View {
+        if let videoID = browser.currentVideoID, videoID != track.source.youTubeVideoID {
+            Menu {
+                Button {
+                    model.queueBrowsedVideo(
+                        videoID: videoID, title: browser.pageTitle, playNow: true
+                    )
+                } label: {
+                    Label("Play now", systemImage: "play.fill")
+                }
+                Button {
+                    model.queueBrowsedVideo(
+                        videoID: videoID, title: browser.pageTitle, playNow: false
+                    )
+                } label: {
+                    Label("Add to queue", systemImage: "text.append")
+                }
+            } label: {
+                Label("Add this video", systemImage: "plus.circle.fill")
+                    .font(.subheadline)
+            }
         }
     }
 
-    /// Shown when YouTube refuses to play the video in an embed. Common on
-    /// music uploads, and nothing the app can do about it — so offer the door.
-    private var embedRefusedBanner: some View {
-        VStack(spacing: 8) {
-            Label(
-                "YouTube won't play this one inside another app.",
-                systemImage: "exclamationmark.triangle"
-            )
-            .font(.footnote)
-
-            HStack(spacing: 12) {
-                if let url = model.currentTrackWatchURL {
-                    Link(destination: url) {
-                        Label("Open in YouTube", systemImage: "arrow.up.forward.app")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                Button {
+                    browser.search(track.title)
+                } label: {
+                    Label("Search YouTube for this song", systemImage: "magnifyingglass")
                 }
-                if model.queue.hasNext {
-                    Button("Skip") { model.skipToNext() }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                Button {
+                    browser.loadHome()
+                } label: {
+                    Label("Browse YouTube", systemImage: "safari")
                 }
+                Button {
+                    browser.reload()
+                } label: {
+                    Label("Reload", systemImage: "arrow.clockwise")
+                }
+                Divider()
+                Button(role: .destructive) {
+                    model.delete(track)
+                } label: {
+                    Label("Remove from library", systemImage: "trash")
+                }
+            } label: {
+                Label("More", systemImage: "ellipsis.circle")
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .padding(.horizontal, horizontalSizeClass == .regular ? 40 : 20)
-        .padding(.top, 12)
     }
 }
 
