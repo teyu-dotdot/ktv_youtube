@@ -2,6 +2,25 @@ import SwiftUI
 import WebKit
 import KaraokeKit
 
+/// Which half of the stereo pair to send to both ears.
+///
+/// Karaoke uploads often carry a guide vocal on one channel and the bare
+/// instrumental on the other; which one varies by uploader, so this is a
+/// three-way switch rather than a "vocals off" button.
+enum AudioChannelMode: String, CaseIterable, Identifiable {
+    case both, left, right
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .both: return "Stereo"
+        case .left: return "Left"
+        case .right: return "Right"
+        }
+    }
+}
+
 /// A `WKWebView` pointed at youtube.com, driven by the queue.
 ///
 /// ## Why a browser instead of the embedded player
@@ -44,6 +63,10 @@ final class YouTubeBrowserModel {
     /// another round of guessing at selectors from the outside.
     private(set) var diagnostics: [String: String] = [:]
 
+    /// Set when the audio graph refused to build, so the UI can say why the
+    /// channel buttons did nothing rather than looking broken.
+    private(set) var audioRoutingError: String?
+
     func load(videoID: String) {
         guard let url = URL(string: "https://www.youtube.com/watch?v=\(videoID)") else { return }
         webView?.load(URLRequest(url: url))
@@ -72,8 +95,19 @@ final class YouTubeBrowserModel {
         webView?.load(URLRequest(url: playlist.watchURL))
     }
 
+    /// Sends audio to one channel or both. See `channelScript`.
+    func setChannelMode(_ mode: AudioChannelMode) {
+        audioRoutingError = nil
+        webView?.evaluateJavaScript("window.ktvSetChannelMode('\(mode.rawValue)')")
+    }
+
     func goBack() { webView?.goBack() }
     func reload() { webView?.reload() }
+
+    fileprivate func reportAudioRoutingError(_ message: String?) {
+        audioRoutingError = "This video's audio can't be split by channel. "
+            + "Tap Reload and try again. (\(message ?? "no detail"))"
+    }
 
     fileprivate func absorbDiagnostics(_ body: [String: Any]) {
         var readable: [String: String] = [:]
@@ -112,6 +146,13 @@ struct YouTubeBrowserView: UIViewRepresentable {
         controller.addUserScript(
             WKUserScript(
                 source: Self.declutterScript,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            )
+        )
+        controller.addUserScript(
+            WKUserScript(
+                source: Self.channelScript,
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true
             )
@@ -208,6 +249,8 @@ struct YouTubeBrowserView: UIViewRepresentable {
                 model.onEnded?()
             case "diag":
                 model.absorbDiagnostics(body)
+            case "audioerror":
+                model.reportAudioRoutingError(body["message"] as? String)
             default:
                 break
             }
@@ -363,6 +406,103 @@ struct YouTubeBrowserView: UIViewRepresentable {
       tick();
       setInterval(tick, 1500);
       [400, 1200, 2500].forEach(function (delay) { setTimeout(nudgeLayout, delay); });
+    })();
+    """
+
+    /// Routes the page's audio to the left channel, the right channel, or both.
+    ///
+    /// A lot of karaoke uploads — especially Chinese and Japanese ones — carry
+    /// a guide vocal on one channel and the bare instrumental on the other.
+    /// Picking a channel is the 原唱/伴唱 switch every KTV machine has, and it
+    /// costs nothing in quality because it isn't processing anything, just
+    /// choosing which half of the stereo pair to send to both ears.
+    ///
+    /// ## Why this works when nothing else could reach the audio
+    ///
+    /// Web Audio normally refuses to touch a cross-origin media element — the
+    /// output is silenced to stop pages reading audio they don't own. YouTube
+    /// is the exception by accident: it feeds the player through Media Source
+    /// Extensions, so the element's `src` is a `blob:` URL on youtube.com's own
+    /// origin. Same-origin, so `createMediaElementSource` is allowed.
+    ///
+    /// ## The catch
+    ///
+    /// Adopting an element into an audio graph is one-way. From then on its
+    /// sound only reaches the speakers through that graph, and a graph that
+    /// fails is silence, not a fallback. So the graph is built lazily — picking
+    /// "Both" never touches it — and Reload in the menu rebuilds the page if
+    /// anything goes wrong.
+    private static let channelScript = """
+    (function () {
+      var context = null, source = null, splitter = null, merger = null;
+      var hookedVideo = null;
+      var mode = 'both';
+
+      function post(payload) {
+        if (window.webkit && window.webkit.messageHandlers
+            && window.webkit.messageHandlers.ktv) {
+          window.webkit.messageHandlers.ktv.postMessage(payload);
+        }
+      }
+
+      function route() {
+        if (!splitter || !merger) { return; }
+        try { splitter.disconnect(); } catch (e) {}
+        if (mode === 'left') {
+          splitter.connect(merger, 0, 0);
+          splitter.connect(merger, 0, 1);
+        } else if (mode === 'right') {
+          splitter.connect(merger, 1, 0);
+          splitter.connect(merger, 1, 1);
+        } else {
+          splitter.connect(merger, 0, 0);
+          splitter.connect(merger, 1, 1);
+        }
+      }
+
+      function buildGraph() {
+        var video = document.querySelector('video');
+        if (!video) { return false; }
+        if (hookedVideo === video && context) { return true; }
+        try {
+          if (!context) {
+            var Ctor = window.AudioContext || window.webkitAudioContext;
+            if (!Ctor) { return false; }
+            context = new Ctor();
+          }
+          // An element can only be adopted once, so this must not be re-run
+          // for the same element.
+          source = context.createMediaElementSource(video);
+          splitter = context.createChannelSplitter(2);
+          merger = context.createChannelMerger(2);
+          source.connect(splitter);
+          merger.connect(context.destination);
+          hookedVideo = video;
+          route();
+          return true;
+        } catch (error) {
+          post({ event: 'audioerror', message: String(error) });
+          return false;
+        }
+      }
+
+      window.ktvSetChannelMode = function (next) {
+        mode = next;
+        // "Both" is the untouched path: if no graph exists yet, leave it that way.
+        if (mode === 'both' && !context) { return; }
+        if (buildGraph()) {
+          if (context && context.state === 'suspended') { context.resume(); }
+          route();
+        }
+      };
+
+      // YouTube swaps the video element between songs, which leaves the graph
+      // pointing at an element that no longer plays. Re-adopt the new one.
+      setInterval(function () {
+        if (mode === 'both' && !context) { return; }
+        var video = document.querySelector('video');
+        if (video && video !== hookedVideo) { window.ktvSetChannelMode(mode); }
+      }, 1000);
     })();
     """
 

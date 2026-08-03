@@ -27,6 +27,13 @@ struct KaraokeVideoPlayerView: View {
 
             if !isExpanded {
                 Divider()
+                if let error = browser.audioRoutingError {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                }
                 controls
                 Divider()
                 UpNextStrip()
@@ -60,6 +67,10 @@ struct KaraokeVideoPlayerView: View {
             // The queue moved on — follow it.
             if let videoID = track.source.youTubeVideoID {
                 browser.load(videoID: videoID)
+            }
+            // A new page means a new video element to re-adopt.
+            if model.channelMode != .both {
+                browser.setChannelMode(model.channelMode)
             }
         }
     }
@@ -104,6 +115,8 @@ struct KaraokeVideoPlayerView: View {
 
             Spacer(minLength: 0)
 
+            channelPicker
+
             addCurrentVideoButton
 
             Spacer(minLength: 0)
@@ -126,6 +139,26 @@ struct KaraokeVideoPlayerView: View {
         }
         .padding(.horizontal, horizontalSizeClass == .regular ? 24 : 14)
         .padding(.vertical, 10)
+    }
+
+    /// The 原唱/伴唱 switch. Karaoke uploads often carry a guide vocal on one
+    /// channel and the bare instrumental on the other, and which one varies by
+    /// uploader — so it's a three-way choice, not a "vocals off" button.
+    private var channelPicker: some View {
+        Picker("Audio channel", selection: Binding(
+            get: { model.channelMode },
+            set: { newMode in
+                model.channelMode = newMode
+                browser.setChannelMode(newMode)
+            }
+        )) {
+            ForEach(AudioChannelMode.allCases) { mode in
+                Text(mode.title).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 220)
+        .accessibilityLabel("Audio channel")
     }
 
     /// Whatever YouTube is showing right now can be queued, which is what makes

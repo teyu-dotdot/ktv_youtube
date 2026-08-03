@@ -270,6 +270,11 @@ final class AppModel {
 
     var sidebarMode: SidebarMode = .library
 
+    /// Which stereo channel to play. Kept on the model rather than the view so
+    /// it survives moving to the next song — a disc that puts the guide vocal
+    /// on the right generally does so for every track on it.
+    var channelMode: AudioChannelMode = .both
+
     func playNext(_ track: Track) {
         queue.playNext(track.id)
         startIfNothingPlaying()
