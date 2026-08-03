@@ -15,7 +15,20 @@ channel is the 原唱/伴唱 switch every KTV machine has.
 
 - **Full-screen video.** No sidebar, no library, no queue list. The playlist is
   the running order and YouTube advances through it.
-- **A floating bar** with the channel switch, reload, and settings.
+- **A floating bar** with the channel switch, search, back-to-playlist, reload
+  and settings.
+
+## Finding songs
+
+There's no search panel. YouTube's own search is in the page, and the
+magnifying glass on the floating bar jumps straight to it.
+
+Adding a song to the queue is YouTube's **Save** button, not this app's — sign
+in to YouTube once in the player and Save drops a song into the playlist, which
+is the running order. That's also how everyone else adds from their phones, so
+there's one mechanism rather than two.
+
+The list icon returns to the playlist when you've browsed away.
 - **QR scanning** to load a playlist without typing a link on a TV-sized screen:
   share the playlist from a phone, show the code, point the iPad at it.
 - **Settings** for the playlist and an API key.

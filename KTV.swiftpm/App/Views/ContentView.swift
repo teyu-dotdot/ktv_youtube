@@ -10,6 +10,8 @@ import KaraokeKit
 struct ContentView: View {
     @Environment(AppModel.self) private var model
     @State private var browser = YouTubeBrowserModel()
+    @State private var isAskingForSearch = false
+    @State private var searchQuery = ""
 
     var body: some View {
         @Bindable var model = model
@@ -33,6 +35,18 @@ struct ContentView: View {
         .statusBarHidden()
         .sheet(isPresented: $model.isShowingSettings) {
             SettingsSheet()
+        }
+        .alert("Search YouTube", isPresented: $isAskingForSearch) {
+            TextField("Song, or song plus artist", text: $searchQuery)
+                .textInputAutocapitalization(.never)
+            Button("Search") {
+                browser.search(searchQuery)
+                searchQuery = ""
+            }
+            Button("Cancel", role: .cancel) { searchQuery = "" }
+        } message: {
+            Text("Results open in the player. Sign in to YouTube and its own "
+                 + "Save button adds a song straight to your playlist.")
         }
         .onChange(of: model.configuration.sharedPlaylistID) {
             if let playlist = model.playlist {
@@ -61,6 +75,27 @@ struct ContentView: View {
             .frame(width: 230)
 
             Divider().frame(height: 22)
+
+            // Searching lives in YouTube's own page rather than in a panel
+            // here. This is just a shortcut into it — and the way back, since
+            // browsing away from the playlist is otherwise a one-way trip.
+            Button {
+                isAskingForSearch = true
+            } label: {
+                Image(systemName: "magnifyingglass")
+            }
+            .accessibilityLabel("Search YouTube")
+
+            Button {
+                if let playlist = model.playlist {
+                    browser.loadPlaylist(playlist)
+                } else {
+                    browser.loadHome()
+                }
+            } label: {
+                Image(systemName: "list.triangle")
+            }
+            .accessibilityLabel(model.playlist == nil ? "YouTube home" : "Back to playlist")
 
             Button {
                 browser.reload()
