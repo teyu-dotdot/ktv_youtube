@@ -2,14 +2,29 @@ import Foundation
 
 /// Where a track's audio came from.
 public enum TrackSource: Equatable, Hashable, Codable, Sendable {
-    /// Resolved from a YouTube link via the configured resolver service.
+    /// A karaoke version that already exists on YouTube, played back in the
+    /// embedded player exactly as uploaded. Nothing is downloaded and no vocal
+    /// removal runs — the instrumental is the real one, and the video usually
+    /// carries timed lyrics. This is the good path.
+    case karaokeVideo(videoID: String)
+    /// The original recording, downloaded via the resolver so the app can strip
+    /// the vocals itself. The fallback for songs with no karaoke version.
     case youTube(videoID: String)
     /// Imported from the Files app, AirDrop, or another app's share sheet.
     case importedFile(originalName: String)
 
     public var youTubeVideoID: String? {
-        if case .youTube(let id) = self { return id }
-        return nil
+        switch self {
+        case .karaokeVideo(let id), .youTube(let id): return id
+        case .importedFile: return nil
+        }
+    }
+
+    /// True when playback goes through the embedded YouTube player rather than
+    /// the local audio engine.
+    public var playsInEmbeddedPlayer: Bool {
+        if case .karaokeVideo = self { return true }
+        return false
     }
 }
 
@@ -58,12 +73,19 @@ public struct Track: Identifiable, Equatable, Hashable, Codable, Sendable {
         self.pitchSemitones = pitchSemitones
     }
 
+    /// True once the track can be played: karaoke videos stream, everything
+    /// else needs its audio on disk first.
+    public var isPlayable: Bool {
+        source.playsInEmbeddedPlayer || mediaFileName != nil
+    }
+
     /// True once the audio is on disk and the track can be played offline.
     public var isDownloaded: Bool { mediaFileName != nil }
 
     public var subtitle: String {
         artist ?? {
             switch source {
+            case .karaokeVideo: return "Karaoke video"
             case .youTube: return "YouTube"
             case .importedFile: return "Imported"
             }

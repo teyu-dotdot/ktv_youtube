@@ -3,7 +3,7 @@ import KaraokeKit
 
 struct LibraryView: View {
     @Environment(AppModel.self) private var model
-    @Binding var isShowingAddSheet: Bool
+    @Binding var isShowingSearch: Bool
     @Binding var isShowingSettings: Bool
     @State private var searchText = ""
 
@@ -43,7 +43,7 @@ struct LibraryView: View {
                 ContentUnavailableView {
                     Label("Your library is empty", systemImage: "music.note.list")
                 } description: {
-                    Text("Add a YouTube link or import audio from Files.")
+                    Text("Search for a song to find its karaoke version.")
                 }
             } else if filteredTracks.isEmpty {
                 ContentUnavailableView.search(text: searchText)
@@ -51,10 +51,24 @@ struct LibraryView: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    isShowingAddSheet = true
+                Menu {
+                    Button {
+                        isShowingSearch = true
+                    } label: {
+                        Label("Find karaoke version", systemImage: "magnifyingglass")
+                    }
+                    Divider()
+                    Button {
+                        model.presentAddOriginal()
+                    } label: {
+                        Label("Add original, remove vocals", systemImage: "waveform.badge.minus")
+                    }
                 } label: {
                     Label("Add song", systemImage: "plus")
+                } primaryAction: {
+                    // Tapping goes straight to search; the menu is for the
+                    // fallback path, which most songs won't need.
+                    isShowingSearch = true
                 }
             }
             ToolbarItem(placement: .topBarLeading) {
@@ -106,7 +120,11 @@ struct TrackRow: View {
 
             Spacer(minLength: 0)
 
-            if let stage {
+            if track.source.playsInEmbeddedPlayer {
+                Image(systemName: "play.rectangle")
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Karaoke video")
+            } else if let stage {
                 ImportIndicator(stage: stage)
             }
         }

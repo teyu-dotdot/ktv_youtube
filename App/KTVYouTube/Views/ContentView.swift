@@ -4,7 +4,7 @@ import KaraokeKit
 struct ContentView: View {
     @Environment(AppModel.self) private var model
     @State private var columnVisibility = NavigationSplitViewVisibility.all
-    @State private var isShowingAddSheet = false
+    @State private var isShowingSearch = false
     @State private var isShowingSettings = false
 
     var body: some View {
@@ -12,21 +12,19 @@ struct ContentView: View {
 
         NavigationSplitView(columnVisibility: $columnVisibility) {
             LibraryView(
-                isShowingAddSheet: $isShowingAddSheet,
+                isShowingSearch: $isShowingSearch,
                 isShowingSettings: $isShowingSettings
             )
             .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 420)
         } detail: {
-            if let track = model.selectedTrack {
-                PlayerView(track: track)
-                    .id(track.id)
-            } else {
-                EmptyPlayerView(isShowingAddSheet: $isShowingAddSheet)
-            }
+            detail
         }
         .navigationSplitViewStyle(.balanced)
-        .sheet(isPresented: $isShowingAddSheet) {
-            AddTrackSheet()
+        .sheet(isPresented: $isShowingSearch) {
+            KaraokeSearchSheet()
+        }
+        .sheet(isPresented: $model.isShowingAddOriginal) {
+            AddTrackSheet(initialQuery: model.pendingOriginalQuery ?? "")
         }
         .sheet(isPresented: $isShowingSettings) {
             SettingsSheet()
@@ -41,19 +39,37 @@ struct ContentView: View {
             Text(message)
         }
     }
+
+    @ViewBuilder
+    private var detail: some View {
+        if let track = model.selectedTrack {
+            // Karaoke videos play in YouTube's embedded player untouched;
+            // everything else goes through the local engine and the separator.
+            if track.source.playsInEmbeddedPlayer {
+                KaraokeVideoPlayerView(track: track)
+                    .id(track.id)
+            } else {
+                PlayerView(track: track)
+                    .id(track.id)
+            }
+        } else {
+            EmptyPlayerView(isShowingSearch: $isShowingSearch)
+        }
+    }
 }
 
 /// Shown in the detail column before anything is selected.
 struct EmptyPlayerView: View {
-    @Binding var isShowingAddSheet: Bool
+    @Binding var isShowingSearch: Bool
 
     var body: some View {
         ContentUnavailableView {
-            Label("No song selected", systemImage: "music.mic")
+            Label("Nothing playing", systemImage: "music.mic")
         } description: {
-            Text("Add a YouTube link or import an audio file, then pick it from the list to start singing.")
+            Text("Search for a song to find its karaoke version, then pick it "
+                 + "from the list to start singing.")
         } actions: {
-            Button("Add a song") { isShowingAddSheet = true }
+            Button("Find a song") { isShowingSearch = true }
                 .buttonStyle(.borderedProminent)
         }
     }

@@ -19,16 +19,18 @@ struct SettingsSheet: View {
                         .keyboardType(.URL)
                     SecureField("Access token (optional)", text: $accessToken)
                 } header: {
-                    Text("Resolver service")
+                    Text("Helper service")
                 } footer: {
                     Text("""
-                    iOS has no supported way to extract audio from YouTube, so this app \
-                    doesn't try. Point it at a small service you run yourself — there's a \
-                    reference implementation in the project's server/ folder — and the app \
-                    will ask that service for a downloadable audio URL.
+                    Used for two things: searching YouTube for karaoke versions, and — \
+                    only for songs that don't have one — fetching the original audio so \
+                    the app can remove the vocals itself. Point it at a small service you \
+                    run yourself; there's a reference implementation in the project's \
+                    server/ folder.
 
-                    Only add content you have the rights to use. Downloading from YouTube \
-                    generally requires permission from the rights holder, and YouTube's \
+                    Karaoke videos found through search stream straight from YouTube and \
+                    are never downloaded. Downloading originals is the other path, and \
+                    that generally requires permission from the rights holder — YouTube's \
                     Terms of Service prohibit it without one.
                     """)
                 }
@@ -48,15 +50,17 @@ struct SettingsSheet: View {
 
                 Section("How it works") {
                     Text("""
-                    Lead vocals sit in the centre of a stereo mix. The app analyses each \
-                    short slice of the song, works out which frequencies are centred in \
-                    both channels, and pulls those out into a separate track. The fader in \
-                    the player mixes that vocal track back in, so you can go from full \
-                    karaoke to a guide vocal to the untouched original.
+                    Most songs already have a karaoke version on YouTube, with the real \
+                    instrumental and lyrics on screen. Searching finds those, and they \
+                    play back exactly as uploaded — nothing is downloaded, nothing is \
+                    processed, and the backing track is the one the karaoke producer made.
 
-                    It's arithmetic on the stereo image, not an AI model, so it runs \
-                    instantly on-device and never sends your audio anywhere — but it can't \
-                    match a trained separator on dense mixes, and it needs real stereo.
+                    For songs with no karaoke version, the app falls back to removing the \
+                    vocals itself. Lead vocals sit in the centre of a stereo mix, so it \
+                    analyses each short slice of the song, finds the frequencies centred \
+                    in both channels, and pulls those into a separate track you can fade \
+                    in and out. That runs on-device and never sends your audio anywhere, \
+                    but it costs a little of the bass and drums, and it needs real stereo.
                     """)
                     .font(.footnote)
                     .foregroundStyle(.secondary)

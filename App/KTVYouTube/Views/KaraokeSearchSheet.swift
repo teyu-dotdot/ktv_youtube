@@ -1,0 +1,182 @@
+import SwiftUI
+import KaraokeKit
+
+/// Finds karaoke versions of a song and adds them to the library.
+///
+/// The main way songs get in. Typing a title here is the whole flow — no link
+/// to copy, no download, no vocal removal — because a karaoke upload already
+/// is what the app would otherwise spend seconds trying to approximate.
+struct KaraokeSearchSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var query = ""
+    @State private var results: [KaraokeSearchResult] = []
+    @State private var isSearching = false
+    @State private var searchError: String?
+    @State private var hasSearched = false
+
+    private var isConfigured: Bool { model.library.resolverConfiguration.isConfigured }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if !isConfigured {
+                    notConfigured
+                } else if isSearching {
+                    ProgressView("Searching…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let searchError {
+                    ContentUnavailableView {
+                        Label("Search failed", systemImage: "wifi.exclamationmark")
+                    } description: {
+                        Text(searchError)
+                    } actions: {
+                        Button("Try again") { runSearch() }
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else if results.isEmpty && hasSearched {
+                    noResults
+                } else if results.isEmpty {
+                    prompt
+                } else {
+                    resultList
+                }
+            }
+            .navigationTitle("Find a song")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(
+                text: $query,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: "Song title, or title and artist"
+            )
+            .onSubmit(of: .search, runSearch)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    // MARK: - States
+
+    private var resultList: some View {
+        List(results) { result in
+            Button {
+                add(result)
+            } label: {
+                KaraokeResultRow(result: result)
+            }
+            .buttonStyle(.plain)
+        }
+        .listStyle(.plain)
+    }
+
+    private var prompt: some View {
+        ContentUnavailableView {
+            Label("Search for a karaoke version", systemImage: "music.mic")
+        } description: {
+            Text("Most songs already have one on YouTube — with the real "
+                 + "instrumental and lyrics on screen. Type a title to look.")
+        }
+    }
+
+    private var noResults: some View {
+        ContentUnavailableView {
+            Label("No karaoke version found", systemImage: "magnifyingglass")
+        } description: {
+            Text("Nothing came back that looks like an instrumental. Try adding "
+                 + "the artist's name, or add the original song instead and let "
+                 + "the app remove the vocals itself.")
+        } actions: {
+            Button("Add the original instead") {
+                model.presentAddOriginal(prefilling: query)
+                dismiss()
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private var notConfigured: some View {
+        ContentUnavailableView {
+            Label("Search isn't set up yet", systemImage: "gearshape")
+        } description: {
+            Text("Searching YouTube needs the small helper service running. "
+                 + "Set its address in Settings.")
+        }
+    }
+
+    // MARK: - Actions
+
+    private func runSearch() {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isSearching else { return }
+
+        isSearching = true
+        searchError = nil
+        Task {
+            do {
+                results = try await model.library.searchKaraoke(trimmed)
+            } catch {
+                results = []
+                searchError = error.localizedDescription
+            }
+            hasSearched = true
+            isSearching = false
+        }
+    }
+
+    private func add(_ result: KaraokeSearchResult) {
+        let track = model.library.addKaraokeVideo(result)
+        dismiss()
+        Task { await model.open(track) }
+    }
+}
+
+private struct KaraokeResultRow: View {
+    let result: KaraokeSearchResult
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Artwork(url: result.thumbnailURL, size: 64)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(result.title)
+                    .font(.subheadline)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+
+                HStack(spacing: 6) {
+                    if let badge = result.confidence.badge {
+                        Text(badge)
+                            .font(.caption2.weight(.medium))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                result.confidence == .high ? Color.green.opacity(0.2)
+                                                           : Color.secondary.opacity(0.15),
+                                in: Capsule()
+                            )
+                    }
+                    Text(result.channel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    if let duration = result.duration {
+                        Text(TimeFormatting.string(from: duration))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .monospacedDigit()
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+            Image(systemName: "plus.circle")
+                .foregroundStyle(.tint)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+}

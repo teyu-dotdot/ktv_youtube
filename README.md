@@ -1,27 +1,45 @@
 # KTV — YouTube karaoke for iPad
 
-An iPadOS app that takes a song, strips the lead vocal out of it, and gives you
-a fader to put it back. Point it at a YouTube link or import an audio file, and
-you get a backing track you can sing over — in your own key, at your own tempo.
-
-Vocal removal runs entirely on the device. Your audio is never uploaded
-anywhere.
+An iPadOS karaoke app. Type a song title, and it finds the karaoke version
+that already exists on YouTube — real instrumental, lyrics on screen — and plays
+it. For the songs that don't have one, it falls back to removing the vocals
+itself, on-device.
 
 ---
 
 ## What it does
 
-- **Add songs** from a YouTube link or from Files / AirDrop / any app's share sheet.
-- **Removes the lead vocal** with a real-time-tunable centre-channel separator
-  (about 28 dB of suppression on a typical pop mix — see [How it works](#how-it-works)).
+**Search finds the karaoke version.** Most songs already have one uploaded: the
+official backing track with timed lyrics burned into the video. Searching for it
+beats anything signal processing can do, because it *is* the instrumental rather
+than an estimate of one. Those play back untouched in an embedded player —
+nothing downloaded, nothing analysed, no waiting.
+
+Search is language-aware, because karaoke tagging isn't: a Korean upload says
+`MR`, a Chinese one says `伴奏`, a Japanese one says `カラオケ`, and none of them
+say "karaoke". Results are ranked on how confidently they look like an
+instrumental, and anything signalling `原唱`, `cover` or `live` is dropped.
+
+**Vocal removal is the fallback**, for the long tail with no karaoke version.
+The app downloads the original and strips the lead vocal with a centre-channel
+separator — about 28 dB of suppression on a typical pop mix. That path also
+gives you:
+
 - **Vocal fader**, 0–100%. Full karaoke at one end, a guide vocal in the middle,
   the untouched original at the other. Moving it is instant — there's no
   re-render.
 - **Key change**, ±12 semitones, without changing the tempo.
 - **Tempo change**, 0.75–1.25×, without changing the key.
-- **Three removal presets** trading vocal suppression against how much of the
+- **Three removal presets**, trading vocal suppression against how much of the
   band survives.
-- Background audio, lock-screen playback, AirPlay, and interruption handling.
+
+Plus import from Files / AirDrop / any app's share sheet, background audio,
+lock-screen playback, AirPlay, and interruption handling.
+
+> **Karaoke videos can't be transposed.** They play in YouTube's embedded
+> player, and there's no way to reach that audio, so key and tempo controls only
+> apply to the vocal-removal path. Original key only on the good path — that's
+> the trade.
 
 ## Requirements
 
@@ -45,21 +63,21 @@ Run the library's tests — the DSP, the link parser, the settings — with:
 make test                    # swift test
 ```
 
-## Getting audio in
+## Getting songs in
 
-There are two ways to add a song, and they have very different requirements.
+The main flow is **＋ ▸ find a karaoke version**: type a title, pick from the
+ranked results, sing. Falling back to **Add original, remove vocals** is for
+when search comes up empty, and **Choose a file** imports anything your iPad can
+play.
 
-### Importing a file — works out of the box
+Search and downloading both need the helper service. Importing a file doesn't.
 
-**Add ▸ Choose a file** takes anything your iPad can play. Nothing else to set
-up. Stereo recordings work; mono ones mostly don't (see [Limits](#limits)).
+### The helper service
 
-### YouTube links — needs a resolver you run
-
-iOS has no supported API for extracting media from YouTube, and this app
-deliberately ships no scraper. Instead it asks a small service *you* run for a
-downloadable audio URL. A reference implementation using
-[yt-dlp](https://github.com/yt-dlp/yt-dlp) is in [`server/`](server/):
+iOS has no supported API for searching or extracting YouTube media, and this app
+deliberately ships no scraper. It asks a small service *you* run. A reference
+implementation using [yt-dlp](https://github.com/yt-dlp/yt-dlp) is in
+[`server/`](server/):
 
 ```bash
 cd server
@@ -67,12 +85,17 @@ pip install -r requirements.txt
 ACCESS_TOKEN=$(openssl rand -hex 16) python resolver.py
 ```
 
-Then in the app: **Settings ▸ Resolver service**, enter
+Then in the app: **Settings ▸ Helper service**, enter
 `http://your-machine.local:8808` and the same token.
 
-The contract is one endpoint, so you can point the app at anything that speaks it:
+Two endpoints, so you can point the app at anything that speaks them:
 
 ```
+GET /search?q=<song name>&limit=<n>
+    -> {"results": [{"video_id": "...", "title": "...", "channel": "...",
+                     "duration": 215, "thumbnail": "...",
+                     "score": 6, "confidence": "high"}, ...]}
+
 GET /resolve?url=<youtube url>
     -> {"audio_url": "...", "title": "...", "artist": "...",
         "duration": 213.4, "ext": "m4a"}
@@ -82,14 +105,22 @@ GET /resolve?url=<youtube url>
 `PROXY_AUDIO=1` to have the service stream the audio itself rather than handing
 out a CDN URL that can expire mid-download.
 
-> **On rights.** Downloading from YouTube generally requires permission from the
-> rights holder, and YouTube's Terms of Service prohibit it without one. That
-> split — the app plays audio, a service you operate fetches it — is why the
-> decision about a given video is yours to make and not something this app makes
-> for you. Karaoke performance itself may also need a licence depending on where
-> and how you do it.
+Ranking lives in [`server/karaoke_scoring.py`](server/karaoke_scoring.py), which
+is where to add keywords for a language it handles badly.
+
+> **On rights.** Karaoke videos found through search are *streamed from YouTube
+> in its own embedded player* — nothing is downloaded, which is the sanctioned
+> way to play YouTube in an app and part of why that path is the default.
+>
+> The fallback path is different: downloading generally requires permission from
+> the rights holder, and YouTube's Terms of Service prohibit it without one.
+> That's why extraction sits in a service you operate rather than in the app —
+> the decision about a given video is yours. Karaoke performance itself may also
+> need a licence depending on where and how you do it.
 
 ## How it works
+
+This is the fallback path. When a karaoke version exists, none of it runs.
 
 ### The idea
 
@@ -164,13 +195,16 @@ Worth knowing before you judge the results:
 Sources/KaraokeKit/
   DSP/          FFT, Hann window, biquads, the separator and its settings
   Audio/        AVAudioEngine two-stem player, session handling, decoding
-  Ingest/       link parsing, resolver client, downloads, library, stem cache
+  Ingest/       search + resolver clients, link parsing, downloads, library,
+                stem cache
 App/
   project.yml   XcodeGen spec
-  KTVYouTube/   SwiftUI app — library sidebar, player, add and settings sheets
+  KTVYouTube/   SwiftUI app — library sidebar, search sheet, embedded karaoke
+                player, vocal-removal player, settings
 server/
-  resolver.py   reference yt-dlp resolver service
-Tests/          XCTest suite for the DSP and the platform-free layers
+  resolver.py          search and resolve endpoints
+  karaoke_scoring.py   language-aware ranking of search results
+Tests/          XCTest suite for the DSP, the clients and the platform-free layers
 ```
 
 `KaraokeKit` is a plain Swift package with no third-party dependencies. The DSP

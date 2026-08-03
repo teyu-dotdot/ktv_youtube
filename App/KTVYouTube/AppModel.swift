@@ -72,6 +72,16 @@ final class AppModel {
 
     // MARK: - Adding tracks
 
+    /// Set when the user falls back from search to adding an original
+    /// recording; carries the text they had already typed.
+    var pendingOriginalQuery: String?
+    var isShowingAddOriginal = false
+
+    func presentAddOriginal(prefilling query: String = "") {
+        pendingOriginalQuery = query.isEmpty ? nil : query
+        isShowingAddOriginal = true
+    }
+
     func addYouTubeLink(_ input: String) async {
         do {
             let track = try await library.addYouTubeLink(input)
@@ -101,17 +111,20 @@ final class AppModel {
 
     // MARK: - Playback
 
-    /// Selects a track, separates it if needed, and loads it into the player.
+    /// Selects a track and gets it ready to play.
+    ///
+    /// Karaoke videos need nothing done to them — they stream in the embedded
+    /// player untouched — so this returns immediately for those. Only the
+    /// fallback path pays for decoding and separation.
     func open(_ track: Track) async {
         preparationTask?.cancel()
         player.stop()
         selectedTrackID = track.id
         isMonoSource = false
+        preparation = nil
 
-        guard track.isDownloaded else {
-            preparation = nil
-            return
-        }
+        guard !track.source.playsInEmbeddedPlayer else { return }
+        guard track.isDownloaded else { return }
 
         let settings = track.preset.settings
         preparation = .decoding

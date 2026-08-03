@@ -6,9 +6,16 @@ struct AddTrackSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
 
+    /// Carried over when the user falls back here from a fruitless search.
+    let initialQuery: String
+
     @State private var linkText = ""
     @State private var isImporting = false
     @State private var isShowingFileImporter = false
+
+    init(initialQuery: String = "") {
+        self.initialQuery = initialQuery
+    }
 
     private var parsedLink: YouTubeLink? { YouTubeLink.parse(linkText) }
     private var resolverIsConfigured: Bool {
@@ -18,6 +25,17 @@ struct AddTrackSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                if !initialQuery.isEmpty {
+                    Section {
+                        Label(
+                            "No karaoke version found for \u{201C}\(initialQuery)\u{201D}.",
+                            systemImage: "magnifyingglass"
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section {
                     TextField("youtube.com/watch?v=…", text: $linkText, axis: .vertical)
                         .textInputAutocapitalization(.never)
@@ -48,7 +66,10 @@ struct AddTrackSheet: View {
                         Text("That doesn't look like a YouTube link.")
                             .foregroundStyle(.red)
                     } else {
-                        Text("The audio is downloaded once, then vocals are removed on this device.")
+                        Text("For songs with no karaoke version. The audio is "
+                             + "downloaded once, then vocals are removed on this "
+                             + "device — good, but not as good as a real "
+                             + "instrumental.")
                     }
                 }
 
@@ -66,7 +87,7 @@ struct AddTrackSheet: View {
                          + "vocal removal needs a stereo image to work with.")
                 }
             }
-            .navigationTitle("Add a song")
+            .navigationTitle("Add the original")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

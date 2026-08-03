@@ -64,6 +64,40 @@ public final class KaraokeLibrary {
         importProgress[id] = stage
     }
 
+    // MARK: - Karaoke videos
+
+    /// Searches for karaoke versions of a song.
+    public func searchKaraoke(_ query: String) async throws -> [KaraokeSearchResult] {
+        guard let client = resolverConfiguration.makeSearchClient() else {
+            throw KaraokeSearchError.notConfigured
+        }
+        return try await client.search(query)
+    }
+
+    /// Adds a karaoke video to the library.
+    ///
+    /// Nothing is downloaded and nothing is analysed — the video streams from
+    /// YouTube in the embedded player — so this is immediate.
+    @discardableResult
+    public func addKaraokeVideo(_ result: KaraokeSearchResult) -> Track {
+        if let existing = tracks.first(where: {
+            $0.source == .karaokeVideo(videoID: result.videoID)
+        }) {
+            return existing
+        }
+
+        let track = Track(
+            title: result.title,
+            artist: result.channel.isEmpty ? nil : result.channel,
+            source: .karaokeVideo(videoID: result.videoID),
+            duration: result.duration,
+            artworkURL: result.thumbnailURL ?? result.link.thumbnailURL
+        )
+        tracks.insert(track, at: 0)
+        persist()
+        return track
+    }
+
     // MARK: - Adding from YouTube
 
     public enum AddError: LocalizedError {

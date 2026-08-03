@@ -1,8 +1,21 @@
 """Reference resolver service for the KTV iPad app.
 
-The app deliberately contains no YouTube extraction code. It asks a service you
-run yourself for a downloadable audio URL, and this is a minimal implementation
-of that contract, built on yt-dlp.
+Two jobs, both delegated here rather than done in the app.
+
+`/search` is the one that matters day to day: it finds karaoke versions of a
+song that already exist on YouTube. Those play back untouched in the app's
+embedded player — no download, no vocal removal, and the on-screen lyrics come
+free.
+
+`/resolve` is the fallback, for songs with no karaoke version. It hands back a
+downloadable audio URL so the app can strip the vocals itself. The app contains
+no YouTube extraction code of its own; this is a minimal implementation of that
+contract, built on yt-dlp.
+
+    GET /search?q=<song name>&limit=<n>
+      -> {"results": [{"video_id": "...", "title": "...", "channel": "...",
+                       "duration": 215, "thumbnail": "...",
+                       "score": 6, "confidence": "high"}, ...]}
 
     GET /resolve?url=<youtube url>
       -> {"audio_url": "...", "title": "...", "artist": "...",
@@ -39,6 +52,8 @@ from urllib.parse import parse_qs, urlparse
 
 from flask import Flask, Response, jsonify, request, stream_with_context
 
+from karaoke_scoring import score_result, search_queries
+
 try:
     import yt_dlp
 except ImportError:  # pragma: no cover - dependency check only
@@ -58,6 +73,11 @@ ACCESS_TOKEN = os.environ.get("ACCESS_TOKEN", "").strip()
 PROXY_AUDIO = os.environ.get("PROXY_AUDIO", "0") == "1"
 
 VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+# Results pulled per query phrasing before merging and ranking. Four phrasings
+# at ten each is plenty to surface a karaoke version if one exists, without
+# making the user wait on four slow searches.
+PER_QUERY_RESULTS = 10
 
 
 def extract_video_id(raw: str) -> str | None:
@@ -131,6 +151,93 @@ def probe(video_id: str) -> dict[str, Any]:
 @app.get("/healthz")
 def healthz() -> Response:
     return jsonify({"status": "ok", "proxy_audio": PROXY_AUDIO})
+
+
+@app.get("/search")
+def search() -> Response:
+    """Find karaoke versions of a song.
+
+    GET /search?q=<song name>&limit=<n>
+      -> {"results": [{"video_id", "title", "channel", "duration",
+                       "thumbnail", "score", "confidence"}, ...]}
+
+    Several query phrasings are tried because karaoke uploads are tagged
+    differently by language, and the merged results are ranked by how confidently
+    they look like an instrumental rather than the original recording.
+    """
+    if denied := require_token():
+        return denied
+
+    query = (request.args.get("q") or "").strip()
+    if not query:
+        return error("Say what you're looking for.", HTTPStatus.BAD_REQUEST)
+    if len(query) > 200:
+        return error("That search is too long.", HTTPStatus.BAD_REQUEST)
+
+    try:
+        limit = max(1, min(25, int(request.args.get("limit", "12"))))
+    except ValueError:
+        limit = 12
+
+    options = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": True,   # metadata only; don't touch the media
+        "skip_download": True,
+    }
+    if cookies := os.environ.get("COOKIES_FILE"):
+        options["cookiefile"] = cookies
+
+    # Keyed by video id so the same upload found by two phrasings is kept once,
+    # at its best score.
+    found: dict[str, dict[str, Any]] = {}
+
+    try:
+        with yt_dlp.YoutubeDL(options) as downloader:
+            for phrasing in search_queries(query):
+                try:
+                    page = downloader.extract_info(
+                        f"ytsearch{PER_QUERY_RESULTS}:{phrasing}", download=False
+                    )
+                except yt_dlp.utils.DownloadError as exc:
+                    # One phrasing failing shouldn't sink the whole search.
+                    log.warning("search phrasing failed (%s): %s", phrasing, exc)
+                    continue
+
+                for entry in (page or {}).get("entries") or []:
+                    video_id = entry.get("id")
+                    if not video_id or not VIDEO_ID.match(video_id):
+                        continue
+
+                    title = entry.get("title") or ""
+                    channel = entry.get("channel") or entry.get("uploader") or ""
+                    duration = entry.get("duration")
+                    scored = score_result(title, channel, duration)
+
+                    existing = found.get(video_id)
+                    if existing and existing["score"] >= scored.score:
+                        continue
+
+                    found[video_id] = {
+                        "video_id": video_id,
+                        "title": title,
+                        "channel": channel,
+                        "duration": duration,
+                        "thumbnail": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+                        "score": scored.score,
+                        "confidence": scored.confidence,
+                    }
+    except Exception:  # pragma: no cover - unexpected upstream failure
+        log.exception("search failed for %r", query)
+        return error("The search failed. Try again in a moment.", HTTPStatus.BAD_GATEWAY)
+
+    results = sorted(found.values(), key=lambda item: item["score"], reverse=True)
+
+    # Anything scoring below zero is actively signalling "original vocal" or
+    # "live" — never worth showing in a karaoke app.
+    results = [item for item in results if item["score"] > 0][:limit]
+
+    return jsonify({"results": results, "query": query})
 
 
 @app.get("/resolve")
