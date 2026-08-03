@@ -158,6 +158,26 @@ final class AppModel {
         startPlaybackIfLocal()
     }
 
+    /// Video ids for everything from the current song onward.
+    var queuedVideoIDs: [String] {
+        ([queue.current] + queue.upNext)
+            .compactMap { $0 }
+            .compactMap { library.track(withID: $0)?.source.youTubeVideoID }
+    }
+
+    /// A playlist someone shared, played instead of the local queue.
+    private(set) var sharedPlaylist: YouTubePlaylist?
+
+    func openSharedPlaylist(_ input: String) -> Bool {
+        guard let playlist = YouTubePlaylist.parse(input) else { return false }
+        sharedPlaylist = playlist
+        return true
+    }
+
+    func clearSharedPlaylist() {
+        sharedPlaylist = nil
+    }
+
     /// Which pane the sidebar is showing.
     enum SidebarMode: String, CaseIterable, Identifiable {
         case library, find

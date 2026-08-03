@@ -56,25 +56,20 @@ struct KaraokeSearchSheet: View {
 
     private var resultList: some View {
         List(results) { result in
+            // Tapping queues rather than plays. Interrupting whoever is
+            // currently singing is never what you meant by tapping a search
+            // result, and it's the one action that can't be undone gracefully.
             Button {
-                add(result, playNow: true)
+                add(result, playNow: false)
             } label: {
                 KaraokeResultRow(result: result)
             }
             .buttonStyle(.plain)
-            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            .contextMenu {
                 Button {
                     add(result, playNow: false)
                 } label: {
-                    Label("Queue", systemImage: "text.append")
-                }
-                .tint(.indigo)
-            }
-            .contextMenu {
-                Button {
-                    add(result, playNow: true)
-                } label: {
-                    Label("Play now", systemImage: "play.fill")
+                    Label("Add to queue", systemImage: "text.append")
                 }
                 Button {
                     let track = model.library.addKaraokeVideo(result)
@@ -82,10 +77,11 @@ struct KaraokeSearchSheet: View {
                 } label: {
                     Label("Play next", systemImage: "text.insert")
                 }
+                Divider()
                 Button {
-                    add(result, playNow: false)
+                    add(result, playNow: true)
                 } label: {
-                    Label("Add to queue", systemImage: "text.append")
+                    Label("Play now (interrupts)", systemImage: "play.fill")
                 }
             }
         }

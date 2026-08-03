@@ -14,6 +14,9 @@ struct KaraokeVideoPlayerView: View {
 
     @State private var browser = YouTubeBrowserModel()
     @State private var isExpanded = false
+    @State private var isShowingPlaylistPrompt = false
+    @State private var playlistInput = ""
+    @State private var playlistError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,6 +49,39 @@ struct KaraokeVideoPlayerView: View {
                 browser.load(videoID: videoID)
             }
         }
+        .alert("Play a shared playlist", isPresented: $isShowingPlaylistPrompt) {
+            TextField("YouTube playlist link", text: $playlistInput)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Play") { openPlaylist() }
+            Button("Cancel", role: .cancel) { playlistInput = "" }
+        } message: {
+            Text("Paste a YouTube playlist link. If it's a collaborative "
+                 + "playlist, everyone can add songs from their own phone and "
+                 + "they'll appear here.")
+        }
+        .alert(
+            "That isn't a playlist link",
+            isPresented: Binding(
+                get: { playlistError != nil },
+                set: { if !$0 { playlistError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { playlistError = nil }
+        } message: {
+            Text(playlistError ?? "")
+        }
+    }
+
+    private func openPlaylist() {
+        let input = playlistInput
+        playlistInput = ""
+        guard model.openSharedPlaylist(input), let playlist = model.sharedPlaylist else {
+            playlistError = "Playlist links look like "
+                + "youtube.com/playlist?list=PL… — check you copied the whole thing."
+            return
+        }
+        browser.loadPlaylist(playlist)
     }
 
     /// Hands the whole screen to the video. Sits over the web view rather than
@@ -143,6 +179,19 @@ struct KaraokeVideoPlayerView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             Menu {
+                Button {
+                    browser.loadQueue(videoIDs: model.queuedVideoIDs)
+                } label: {
+                    Label("Hand queue to YouTube", systemImage: "list.triangle")
+                }
+                .disabled(model.queuedVideoIDs.count < 2)
+
+                Button {
+                    isShowingPlaylistPrompt = true
+                } label: {
+                    Label("Play a shared playlist…", systemImage: "person.2")
+                }
+                Divider()
                 Button {
                     browser.search(track.title)
                 } label: {

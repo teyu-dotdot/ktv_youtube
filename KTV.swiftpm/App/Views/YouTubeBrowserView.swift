@@ -56,6 +56,17 @@ final class YouTubeBrowserModel {
         webView?.load(URLRequest(url: url))
     }
 
+    /// Hands a whole running order to YouTube as an anonymous playlist, so it
+    /// advances natively instead of the app racing its autoplay.
+    func loadQueue(videoIDs: [String]) {
+        guard let url = YouTubePlaylist.anonymousPlaylistURL(videoIDs: videoIDs) else { return }
+        webView?.load(URLRequest(url: url))
+    }
+
+    func loadPlaylist(_ playlist: YouTubePlaylist) {
+        webView?.load(URLRequest(url: playlist.watchURL))
+    }
+
     func goBack() { webView?.goBack() }
     func reload() { webView?.reload() }
 
@@ -199,14 +210,21 @@ struct YouTubeBrowserView: UIViewRepresentable {
     /// right on the boundary.
     private static let declutterScript = """
     (function () {
+      // Substring matching rather than an exact list: YouTube serves several
+      // layouts depending on window size and renames these containers freely,
+      // and a selector list that misses is indistinguishable from no script at
+      // all. Anything named "related" or "secondary" next to the player is the
+      // suggestions rail.
       var css = [
-        '#related, #secondary, #secondary-inner { display: none !important; }',
-        'ytd-watch-next-secondary-results-renderer { display: none !important; }',
-        'ytm-watch-next-secondary-results-renderer { display: none !important; }',
-        'ytm-companion-slot, ytm-item-section-renderer.related { display: none !important; }',
+        '[id*="related" i], [class*="related" i] { display: none !important; }',
+        '[id*="secondary" i], [class*="secondary" i] { display: none !important; }',
+        'ytd-watch-next-secondary-results-renderer,',
+        'ytm-watch-next-secondary-results-renderer,',
+        'ytd-compact-video-renderer, ytm-compact-video-renderer { display: none !important; }',
         // Reclaim the space the rail was using.
         '#primary, #primary-inner { max-width: 100% !important; width: 100% !important; }',
-        'ytd-watch-flexy[flexy] #columns { max-width: 100% !important; }'
+        'ytd-watch-flexy[flexy] #columns { max-width: 100% !important; }',
+        '.watch-content, ytm-watch { width: 100% !important; }'
       ].join('\\n');
 
       function injectCSS() {
