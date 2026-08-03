@@ -21,21 +21,25 @@ let package = Package(
         .iOS("17.0")
     ],
     products: [
+        // Deliberately minimal. `appIcon:` and `accentColor:` are omitted
+        // rather than hard-coded: the enum members available to them differ
+        // between Swift Playgrounds versions, and a wrong name doesn't fail
+        // gracefully — the manifest won't compile, so the whole project refuses
+        // to load with an error that points at the icon rather than the cause.
+        //
+        // Set them in **⋯ ▸ App Settings** instead. Swift Playgrounds writes
+        // the correct syntax for its own version straight back into this file.
         .iOSApplication(
             name: "KTV",
             targets: ["KTVApp"],
             bundleIdentifier: "com.example.ktvyoutube",
-            teamIdentifier: "",
             displayVersion: "1.0",
             bundleVersion: "1",
-            appIcon: .placeholder(icon: .music),
-            accentColor: .presetColor(.purple),
             supportedDeviceFamilies: [.pad, .phone],
             supportedInterfaceOrientations: [
                 .portrait,
                 .landscapeRight,
-                .landscapeLeft,
-                .portraitUpsideDown(.when(deviceFamilies: [.pad]))
+                .landscapeLeft
             ]
         )
     ],

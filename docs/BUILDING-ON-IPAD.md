@@ -29,9 +29,28 @@ The repository's root `Package.swift` and the Xcode project both point *into*
 `KTV.swiftpm/` instead. One copy of every file, three build systems reading it,
 and edits made on the iPad are edits to the real project.
 
-To put the app on the home screen rather than running it inside Swift
-Playgrounds, use **⋯ ▸ App Settings** to set a name and icon, then the app can
-be installed to the device directly from Swift Playgrounds.
+## Icon and accent colour
+
+`KTV.swiftpm/Package.swift` deliberately doesn't set `appIcon:` or
+`accentColor:`. The enum members those accept differ between Swift Playgrounds
+versions, and a name that doesn't exist in yours doesn't fail gracefully — the
+manifest stops compiling, and the whole project refuses to load with
+`FailedToEvaluateManifest` plus an error pointing at the icon rather than at the
+version mismatch.
+
+Set them in **⋯ ▸ App Settings** instead. Swift Playgrounds writes the right
+syntax for its own version straight back into `Package.swift`.
+
+The same screen is how you put the app on the home screen rather than running it
+inside Swift Playgrounds.
+
+## If the project won't load
+
+Read the **Package** section of the error list first, not the **App** section.
+A manifest that fails to compile produces a cascade — "Loading failed",
+"FailedToEvaluateManifest", "Build failed because the Mach-O file couldn't be
+generated" — and every one of those is downstream of a single real error in
+`Package.swift`. That real error is the only one worth acting on.
 
 ## What works
 
