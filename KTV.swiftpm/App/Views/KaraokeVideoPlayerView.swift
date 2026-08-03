@@ -19,8 +19,15 @@ struct KaraokeVideoPlayerView: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .topTrailing) {
-                YouTubeBrowserView(model: browser, initialVideoID: track.source.youTubeVideoID)
-                    .background(.black)
+                YouTubeBrowserView(
+                    model: browser,
+                    initialVideoID: track.source.youTubeVideoID,
+                    pageTweaksEnabled: model.pageTweaksEnabled
+                )
+                // Scripts are registered when the web view is built, so
+                // flipping the toggle has to build a new one.
+                .id(model.pageTweaksEnabled)
+                .background(.black)
 
                 expandButton
             }
@@ -223,6 +230,12 @@ struct KaraokeVideoPlayerView: View {
                     Label("Reload", systemImage: "arrow.clockwise")
                 }
                 Divider()
+                Toggle(isOn: Binding(
+                    get: { model.pageTweaksEnabled },
+                    set: { model.pageTweaksEnabled = $0 }
+                )) {
+                    Label("Tidy up YouTube's page", systemImage: "wand.and.stars")
+                }
                 Button {
                     isShowingDiagnostics = true
                 } label: {

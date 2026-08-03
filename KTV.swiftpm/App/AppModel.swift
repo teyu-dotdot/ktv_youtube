@@ -275,6 +275,14 @@ final class AppModel {
     /// on the right generally does so for every track on it.
     var channelMode: AudioChannelMode = .both
 
+    /// Whether anything is injected into YouTube's pages.
+    ///
+    /// Turning this off is the fastest way to find out whether a rendering
+    /// problem belongs to this app or to the page underneath it.
+    var pageTweaksEnabled: Bool = UserDefaults.standard.object(forKey: "player.pageTweaks") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(pageTweaksEnabled, forKey: "player.pageTweaks") }
+    }
+
     func playNext(_ track: Track) {
         queue.playNext(track.id)
         startIfNothingPlaying()

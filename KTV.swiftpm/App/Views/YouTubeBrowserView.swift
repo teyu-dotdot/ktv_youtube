@@ -132,10 +132,21 @@ struct YouTubeBrowserView: UIViewRepresentable {
     let model: YouTubeBrowserModel
     /// Video to show on first load. Later changes come through the model.
     let initialVideoID: String?
+    /// When false, nothing is injected into the page at all — no hiding, no
+    /// layout changes, no channel routing. Plain YouTube.
+    ///
+    /// This exists to settle an argument rather than to be used day to day.
+    /// Debugging a page this code can't inspect turned into several rounds of
+    /// guessing; being able to switch the guesses off answers "is any of this
+    /// mine?" in one attempt.
+    var pageTweaksEnabled: Bool = true
 
     func makeUIView(context: Context) -> WKWebView {
         let controller = WKUserContentController()
         controller.add(context.coordinator, name: Coordinator.messageName)
+
+        // End-of-video detection is what drives the queue, so it stays even in
+        // safe mode; it only listens and never changes the page.
         controller.addUserScript(
             WKUserScript(
                 source: Self.endOfVideoScript,
@@ -143,20 +154,17 @@ struct YouTubeBrowserView: UIViewRepresentable {
                 forMainFrameOnly: true
             )
         )
-        controller.addUserScript(
-            WKUserScript(
-                source: Self.declutterScript,
-                injectionTime: .atDocumentEnd,
-                forMainFrameOnly: true
-            )
-        )
-        controller.addUserScript(
-            WKUserScript(
-                source: Self.channelScript,
-                injectionTime: .atDocumentEnd,
-                forMainFrameOnly: true
-            )
-        )
+        if pageTweaksEnabled {
+            for source in [Self.declutterScript, Self.channelScript] {
+                controller.addUserScript(
+                    WKUserScript(
+                        source: source,
+                        injectionTime: .atDocumentEnd,
+                        forMainFrameOnly: true
+                    )
+                )
+            }
+        }
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
@@ -174,7 +182,12 @@ struct YouTubeBrowserView: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
-        webView.isOpaque = false
+        // Opaque on purpose. A transparent WKWebView composites its content
+        // over whatever is behind it, and hardware-decoded video sits in its
+        // own layer that does not always survive that path — it renders black
+        // while the page around it draws normally, and the player's controls
+        // still fade in and out over the top. That matches the symptom exactly.
+        webView.isOpaque = true
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
 
