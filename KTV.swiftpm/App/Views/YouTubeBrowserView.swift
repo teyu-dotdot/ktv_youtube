@@ -39,6 +39,11 @@ final class YouTubeBrowserModel {
     /// Called when the playing video reaches its end.
     var onEnded: (() -> Void)?
 
+    /// Latest report from the injected script. Surfaced in the player's menu so
+    /// a screenshot can settle what the page actually looks like, rather than
+    /// another round of guessing at selectors from the outside.
+    private(set) var diagnostics: [String: String] = [:]
+
     func load(videoID: String) {
         guard let url = URL(string: "https://www.youtube.com/watch?v=\(videoID)") else { return }
         webView?.load(URLRequest(url: url))
@@ -69,6 +74,14 @@ final class YouTubeBrowserModel {
 
     func goBack() { webView?.goBack() }
     func reload() { webView?.reload() }
+
+    fileprivate func absorbDiagnostics(_ body: [String: Any]) {
+        var readable: [String: String] = [:]
+        for (key, value) in body where key != "event" {
+            readable[key] = String(describing: value)
+        }
+        diagnostics = readable
+    }
 
     fileprivate func update(from webView: WKWebView) {
         canGoBack = webView.canGoBack
@@ -188,8 +201,16 @@ struct YouTubeBrowserView: UIViewRepresentable {
             didReceive message: WKScriptMessage
         ) {
             guard let body = message.body as? [String: Any],
-                  body["event"] as? String == "ended" else { return }
-            model.onEnded?()
+                  let event = body["event"] as? String else { return }
+
+            switch event {
+            case "ended":
+                model.onEnded?()
+            case "diag":
+                model.absorbDiagnostics(body)
+            default:
+                break
+            }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -197,46 +218,39 @@ struct YouTubeBrowserView: UIViewRepresentable {
         }
     }
 
-    /// Strips a watch page back to the player and lets it use the full width.
+    /// Strips a watch page back to the player, and never hides the player.
     ///
-    /// ## Widen, never set heights
+    /// ## Why this is JavaScript rather than a stylesheet
     ///
-    /// An earlier version forced `height: 100%` down the container chain to
-    /// fill vertically, and blanked the video. A percentage height resolves
-    /// against the parent's height, so the instant one element in the real DOM
-    /// isn't in the selector list the chain breaks and it computes to zero —
-    /// a black pane with player controls that flash and disappear.
+    /// The clutter is matched by substring — `related`, `secondary` — because
+    /// YouTube renames these containers between layouts and an exact list keeps
+    /// missing. But a substring match can also hit an *ancestor* of the player,
+    /// and `display: none` on an ancestor takes the video with it. That failure
+    /// looks identical to the page not loading: a black rectangle with controls
+    /// that flash on a drag and disappear.
     ///
-    /// So this only ever sets widths. The player keeps its own aspect ratio and
-    /// grows taller because it got wider, which reaches the same place without
-    /// depending on a DOM this code can't see. The `<video>` element is left
-    /// alone entirely: YouTube sizes it in pixels to letterbox correctly, and
-    /// that arithmetic is better than anything guessed from here.
+    /// A stylesheet can't express "unless it contains the video". This can: it
+    /// walks the matches and skips any node the `<video>` element lives inside.
+    /// Broad matching, with the one thing that must survive protected.
     ///
-    /// A synthetic resize event is dispatched afterwards because that sizing
-    /// only re-runs when YouTube believes the container changed; widening it
-    /// from a stylesheet doesn't tell it anything.
-    ///
-    /// Scoped to `/watch` behind a class on `<html>`. The same rules on search
-    /// or the home page would hide what you browse with, and YouTube navigates
-    /// without reloading, so the gate is re-evaluated rather than set at load.
+    /// Widths still come from CSS, which is safe. Heights are never set —
+    /// a percentage height resolves against the parent, so one missing link in
+    /// the chain computes to zero and blanks the video just as effectively.
     private static let declutterScript = """
     (function () {
-      var css = [
-        /* Everything that isn't the player, on a watch page only. */
-        'html.ktv-watch [id*="related" i], html.ktv-watch [class*="related" i],',
-        'html.ktv-watch [id*="secondary" i], html.ktv-watch [class*="secondary" i],',
-        'html.ktv-watch #comments, html.ktv-watch ytd-comments,',
-        'html.ktv-watch #meta, html.ktv-watch #below, html.ktv-watch #info,',
-        'html.ktv-watch ytd-watch-metadata,',
-        'html.ktv-watch ytm-slim-video-metadata-section-renderer,',
-        'html.ktv-watch ytm-video-description-header-renderer,',
-        'html.ktv-watch ytm-comments-entry-point-header-renderer,',
-        'html.ktv-watch .slim-video-information-container,',
-        'html.ktv-watch #masthead, html.ktv-watch ytd-masthead,',
-        'html.ktv-watch ytm-mobile-topbar-renderer { display: none !important; }',
+      var CLUTTER = [
+        '[id*="related" i]', '[class*="related" i]',
+        '[id*="secondary" i]', '[class*="secondary" i]',
+        '#comments', 'ytd-comments', 'ytd-watch-metadata',
+        'ytm-comments-entry-point-header-renderer',
+        'ytm-slim-video-metadata-section-renderer',
+        'ytm-video-description-header-renderer',
+        '.slim-video-information-container',
+        '#masthead', 'ytd-masthead', 'ytm-mobile-topbar-renderer'
+      ].join(',');
 
-        /* Width only. Heights are deliberately untouched — see the note above. */
+      // Width only, and only on a watch page. See the note above about heights.
+      var css = [
         'html.ktv-watch #columns, html.ktv-watch #primary,',
         'html.ktv-watch #primary-inner, html.ktv-watch ytd-watch-flexy,',
         'html.ktv-watch ytm-watch, html.ktv-watch .watch-content,',
@@ -246,9 +260,18 @@ struct YouTubeBrowserView: UIViewRepresentable {
         'html.ktv-watch .player-container {',
         '  width: 100% !important; max-width: none !important;',
         '  min-width: 0 !important; margin: 0 !important; padding: 0 !important; }',
-
         'html.ktv-watch body { margin: 0 !important; background: #000 !important; }'
       ].join('\\n');
+
+      var protectedCount = 0;
+      var hiddenCount = 0;
+
+      function post(payload) {
+        if (window.webkit && window.webkit.messageHandlers
+            && window.webkit.messageHandlers.ktv) {
+          window.webkit.messageHandlers.ktv.postMessage(payload);
+        }
+      }
 
       function injectCSS() {
         if (document.getElementById('ktv-declutter')) { return; }
@@ -258,10 +281,30 @@ struct YouTubeBrowserView: UIViewRepresentable {
         (document.head || document.documentElement).appendChild(style);
       }
 
-      // Only strip watch pages; browsing needs its chrome.
+      function isWatching() {
+        return location.pathname.indexOf('/watch') === 0;
+      }
+
+      // Hide the clutter, but never anything the video lives inside.
+      function hideClutter() {
+        if (!isWatching()) { return; }
+        var video = document.querySelector('video');
+        var nodes = document.querySelectorAll(CLUTTER);
+        hiddenCount = 0;
+        protectedCount = 0;
+        for (var i = 0; i < nodes.length; i++) {
+          var node = nodes[i];
+          if (video && node.contains(video)) { protectedCount++; continue; }
+          if (node.style.display !== 'none') {
+            node.style.setProperty('display', 'none', 'important');
+          }
+          hiddenCount++;
+        }
+      }
+
       var wasWatching = null;
       function applyMode() {
-        var watching = location.pathname.indexOf('/watch') === 0;
+        var watching = isWatching();
         document.documentElement.classList.toggle('ktv-watch', watching);
         if (watching !== wasWatching) {
           wasWatching = watching;
@@ -269,14 +312,12 @@ struct YouTubeBrowserView: UIViewRepresentable {
         }
       }
 
-      // The player only re-fits the video when it thinks its container moved,
-      // and a stylesheet widening it says nothing. This does.
+      // The player re-fits its video only when it believes the container moved,
+      // and widening it from a stylesheet says nothing.
       function nudgeLayout() {
         try { window.dispatchEvent(new Event('resize')); } catch (e) {}
       }
 
-      // Autoplay lives behind a toggle whose markup differs by layout, so try
-      // every form and click only the ones reporting themselves on.
       function disableAutoplay() {
         var toggles = document.querySelectorAll(
           '.ytp-autonav-toggle-button, ytm-autonav-toggle button, ' +
@@ -290,15 +331,38 @@ struct YouTubeBrowserView: UIViewRepresentable {
         }
       }
 
-      function tick() { injectCSS(); applyMode(); disableAutoplay(); }
+      // Reported so a screenshot can answer what the DOM actually looks like,
+      // instead of another round of guessing at selectors.
+      function reportDiagnostics() {
+        var video = document.querySelector('video');
+        var rect = video ? video.getBoundingClientRect() : null;
+        post({
+          event: 'diag',
+          watching: isWatching(),
+          path: location.pathname,
+          hasVideo: !!video,
+          videoWidth: rect ? Math.round(rect.width) : 0,
+          videoHeight: rect ? Math.round(rect.height) : 0,
+          videoVisible: video ? (getComputedStyle(video).display !== 'none') : false,
+          paused: video ? video.paused : null,
+          readyState: video ? video.readyState : null,
+          hidden: hiddenCount,
+          protectedAncestors: protectedCount,
+          viewportWidth: Math.round(window.innerWidth),
+          viewportHeight: Math.round(window.innerHeight)
+        });
+      }
+
+      function tick() {
+        injectCSS();
+        applyMode();
+        hideClutter();
+        disableAutoplay();
+        reportDiagnostics();
+      }
       tick();
-      // YouTube lays out after its own scripts settle and navigates without
-      // reloading, so this keeps running rather than firing once.
-      setInterval(tick, 1000);
-      // A few nudges early on, while the player is still being built.
-      [400, 1200, 2500].forEach(function (delay) {
-        setTimeout(nudgeLayout, delay);
-      });
+      setInterval(tick, 1500);
+      [400, 1200, 2500].forEach(function (delay) { setTimeout(nudgeLayout, delay); });
     })();
     """
 

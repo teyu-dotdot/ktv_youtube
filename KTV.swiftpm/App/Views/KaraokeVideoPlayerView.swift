@@ -14,6 +14,7 @@ struct KaraokeVideoPlayerView: View {
 
     @State private var browser = YouTubeBrowserModel()
     @State private var isExpanded = false
+    @State private var isShowingDiagnostics = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,6 +40,9 @@ struct KaraokeVideoPlayerView: View {
         .toolbar { toolbarContent }
         .onAppear {
             browser.onEnded = { model.songFinished() }
+        }
+        .sheet(isPresented: $isShowingDiagnostics) {
+            PlayerDiagnosticsView(diagnostics: browser.diagnostics)
         }
         .onChange(of: model.pendingBrowserSearch) {
             if let query = model.pendingBrowserSearch {
@@ -186,6 +190,11 @@ struct KaraokeVideoPlayerView: View {
                     Label("Reload", systemImage: "arrow.clockwise")
                 }
                 Divider()
+                Button {
+                    isShowingDiagnostics = true
+                } label: {
+                    Label("Player diagnostics", systemImage: "stethoscope")
+                }
                 Button(role: .destructive) {
                     model.delete(track)
                 } label: {
@@ -242,5 +251,53 @@ struct UpNextStrip: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+
+/// What the injected script sees on the page.
+///
+/// Exists because this app styles a DOM it can't inspect. Three rounds went
+/// into guessing why the player was black; this turns the next one into a
+/// screenshot.
+struct PlayerDiagnosticsView: View {
+    @Environment(\.dismiss) private var dismiss
+    let diagnostics: [String: String]
+
+    private var readings: [(String, String)] {
+        diagnostics.sorted { $0.key < $1.key }.map { ($0.key, $0.value) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if readings.isEmpty {
+                    Text("No report yet. The script sends one every couple of "
+                         + "seconds while a page is loaded.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Section {
+                        ForEach(readings, id: \.0) { key, value in
+                            LabeledContent(key, value: value)
+                                .font(.system(.subheadline, design: .monospaced))
+                        }
+                    } footer: {
+                        Text("videoWidth and videoHeight are what matter. Zero "
+                             + "means something is hiding or collapsing the "
+                             + "player; protectedAncestors counts containers "
+                             + "the script refused to hide because the video "
+                             + "was inside them.")
+                    }
+                }
+            }
+            .navigationTitle("Player diagnostics")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
