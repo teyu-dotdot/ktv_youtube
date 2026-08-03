@@ -40,6 +40,12 @@ struct KaraokeVideoPlayerView: View {
         .onAppear {
             browser.onEnded = { model.songFinished() }
         }
+        .onChange(of: model.pendingBrowserSearch) {
+            if let query = model.pendingBrowserSearch {
+                browser.search(query)
+                model.pendingBrowserSearch = nil
+            }
+        }
         .onChange(of: model.pendingPlaylistHandover) {
             if let playlist = model.pendingPlaylistHandover {
                 browser.loadPlaylist(playlist)

@@ -105,20 +105,43 @@ struct KaraokeSearchSheet: View {
                  + "the artist's name, or add the original song instead and let "
                  + "the app remove the vocals itself.")
         } actions: {
-            Button("Add the original instead") {
-                model.presentAddOriginal(prefilling: query)
+            VStack(spacing: 8) {
+                Button("Search YouTube directly") {
+                    model.searchOnYouTube(query)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!model.canSearchInPlayer)
+
+                Button("Add the original instead") {
+                    model.presentAddOriginal(prefilling: query)
+                }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.bordered)
         }
     }
 
+    /// No API key is not a dead end — YouTube's own search is free, and the
+    /// app is already a browser. The key only buys the ranked, filtered list.
     private var notConfigured: some View {
         ContentUnavailableView {
-            Label("Search isn't set up yet", systemImage: "gearshape")
+            Label("Search on YouTube", systemImage: "magnifyingglass")
         } description: {
-            Text("Add a YouTube API key in Settings and search works on its own — "
-                 + "no other machine needed. Or point the app at the helper "
-                 + "service if you're running one.")
+            Text(model.canSearchInPlayer
+                 ? "Type a song above and search YouTube directly — no setup "
+                   + "needed. Use “Add this video” under the player to queue "
+                   + "whatever you find.\n\nA YouTube API key in Settings adds "
+                   + "a ranked list here that filters out originals, covers and "
+                   + "live versions."
+                 : "Play something first, then search YouTube from here.\n\n"
+                   + "A YouTube API key in Settings adds a ranked list that "
+                   + "filters out originals, covers and live versions.")
+        } actions: {
+            Button("Search YouTube for \u{201C}\(query)\u{201D}") {
+                model.searchOnYouTube(query)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                      || !model.canSearchInPlayer)
         }
     }
 

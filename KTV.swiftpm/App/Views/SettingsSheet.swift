@@ -18,15 +18,21 @@ struct SettingsSheet: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } header: {
-                    Text("YouTube API key")
+                    Text("YouTube API key (optional)")
                 } footer: {
                     Text("""
-                    All that's needed to find karaoke versions. Create one free \
-                    at console.cloud.google.com — enable "YouTube Data API v3" \
-                    and make an API key. No other machine required.
+                    Not needed to play anything. You can search YouTube inside \
+                    the app and queue what you find without one.
 
-                    The free allowance is about 50 searches a day, which resets \
-                    at midnight Pacific time.
+                    A key adds two things: the ranked list in Find, which \
+                    filters out originals, covers and live versions and orders \
+                    by popularity; and reading a shared playlist's contents so \
+                    it becomes the queue.
+
+                    Create one free at console.cloud.google.com — enable \
+                    "YouTube Data API v3" and make an API key. The free \
+                    allowance is about 50 searches a day, resetting at midnight \
+                    Pacific.
                     """)
                 }
 

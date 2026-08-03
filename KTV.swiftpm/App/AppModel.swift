@@ -228,6 +228,24 @@ final class AppModel {
         pendingPlaylistHandover = sharedPlaylist
     }
 
+    /// A search to run in the player's web view, picked up by the player.
+    ///
+    /// The keyless path: YouTube's own search needs no API key, no quota and no
+    /// helper service, so the Find pane should never be a dead end just because
+    /// nothing is configured.
+    var pendingBrowserSearch: String?
+
+    /// True when there's a web view on screen to receive a search.
+    var canSearchInPlayer: Bool {
+        selectedTrack?.source.playsInEmbeddedPlayer == true
+    }
+
+    func searchOnYouTube(_ query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        pendingBrowserSearch = trimmed
+    }
+
     /// Plays the shared playlist from `index`, making it the running order.
     func playSharedPlaylist(from index: Int) async {
         guard sharedPlaylistTracks.indices.contains(index) else { return }
