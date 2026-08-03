@@ -43,6 +43,12 @@ struct KaraokeVideoPlayerView: View {
         .onAppear {
             browser.onEnded = { model.songFinished() }
         }
+        .onChange(of: model.pendingPlaylistHandover) {
+            if let playlist = model.pendingPlaylistHandover {
+                browser.loadPlaylist(playlist)
+                model.pendingPlaylistHandover = nil
+            }
+        }
         .onChange(of: track.id) {
             // The queue moved on — follow it.
             if let videoID = track.source.youTubeVideoID {

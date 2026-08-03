@@ -14,14 +14,26 @@ public struct ResolverConfiguration: Equatable, Sendable {
     /// vocal-removal fallback doesn't.
     public var youTubeAPIKey: String
 
+    /// A YouTube playlist everyone at the party adds to. Persisted so the room
+    /// doesn't have to re-paste the link every time the app opens.
+    public var sharedPlaylistID: String
+
     public init(
         baseURLString: String = "",
         accessToken: String = "",
-        youTubeAPIKey: String = ""
+        youTubeAPIKey: String = "",
+        sharedPlaylistID: String = ""
     ) {
         self.baseURLString = baseURLString
         self.accessToken = accessToken
         self.youTubeAPIKey = youTubeAPIKey
+        self.sharedPlaylistID = sharedPlaylistID
+    }
+
+    public var sharedPlaylist: YouTubePlaylist? {
+        let trimmed = sharedPlaylistID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return YouTubePlaylist(listID: trimmed)
     }
 
     public var baseURL: URL? {
@@ -64,12 +76,14 @@ public struct ResolverConfiguration: Equatable, Sendable {
     private static let baseURLKey = "resolver.baseURL"
     private static let tokenKey = "resolver.accessToken"
     private static let apiKeyKey = "search.youTubeAPIKey"
+    private static let playlistKey = "party.sharedPlaylistID"
 
     public static func load(from defaults: UserDefaults = .standard) -> ResolverConfiguration {
         ResolverConfiguration(
             baseURLString: defaults.string(forKey: baseURLKey) ?? "",
             accessToken: defaults.string(forKey: tokenKey) ?? "",
-            youTubeAPIKey: defaults.string(forKey: apiKeyKey) ?? ""
+            youTubeAPIKey: defaults.string(forKey: apiKeyKey) ?? "",
+            sharedPlaylistID: defaults.string(forKey: playlistKey) ?? ""
         )
     }
 
@@ -77,5 +91,6 @@ public struct ResolverConfiguration: Equatable, Sendable {
         defaults.set(baseURLString, forKey: Self.baseURLKey)
         defaults.set(accessToken, forKey: Self.tokenKey)
         defaults.set(youTubeAPIKey, forKey: Self.apiKeyKey)
+        defaults.set(sharedPlaylistID, forKey: Self.playlistKey)
     }
 }

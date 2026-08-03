@@ -165,27 +165,87 @@ final class AppModel {
             .compactMap { library.track(withID: $0)?.source.youTubeVideoID }
     }
 
-    /// A playlist someone shared, played instead of the local queue.
-    private(set) var sharedPlaylist: YouTubePlaylist?
+    // MARK: - Shared playlist
 
-    func openSharedPlaylist(_ input: String) -> Bool {
+    /// Songs currently on the shared playlist, in playlist order.
+    private(set) var sharedPlaylistTracks: [KaraokeSearchResult] = []
+    private(set) var isRefreshingPlaylist = false
+    private(set) var playlistError: String?
+
+    var sharedPlaylist: YouTubePlaylist? {
+        library.resolverConfiguration.sharedPlaylist
+    }
+
+    /// Accepts a playlist link and remembers it. Returns false if it isn't one.
+    @discardableResult
+    func setSharedPlaylist(_ input: String) -> Bool {
         guard let playlist = YouTubePlaylist.parse(input) else { return false }
-        sharedPlaylist = playlist
+        var configuration = library.resolverConfiguration
+        configuration.sharedPlaylistID = playlist.listID
+        library.resolverConfiguration = configuration
+        sharedPlaylistTracks = []
+        playlistError = nil
+        Task { await refreshSharedPlaylist() }
         return true
     }
 
     func clearSharedPlaylist() {
-        sharedPlaylist = nil
+        var configuration = library.resolverConfiguration
+        configuration.sharedPlaylistID = ""
+        library.resolverConfiguration = configuration
+        sharedPlaylistTracks = []
+        playlistError = nil
+    }
+
+    /// Re-reads the playlist so songs other people just added show up.
+    func refreshSharedPlaylist() async {
+        guard let playlist = sharedPlaylist else { return }
+        guard let client = library.resolverConfiguration.makePlaylistClient() else {
+            playlistError = "Reading a shared playlist needs a YouTube API key. "
+                + "Add one in Settings, or use Play in YouTube below to let "
+                + "YouTube run the list instead."
+            return
+        }
+
+        isRefreshingPlaylist = true
+        defer { isRefreshingPlaylist = false }
+        do {
+            sharedPlaylistTracks = try await client.items(in: playlist)
+            playlistError = nil
+        } catch {
+            playlistError = error.localizedDescription
+        }
+    }
+
+    /// Hands the playlist to YouTube to play natively.
+    ///
+    /// The no-API-key path: the app can't read the list, but YouTube can play
+    /// it in order perfectly well, and songs people add still appear because
+    /// YouTube re-reads its own playlist.
+    var pendingPlaylistHandover: YouTubePlaylist?
+
+    func playSharedPlaylistInYouTube() {
+        pendingPlaylistHandover = sharedPlaylist
+    }
+
+    /// Plays the shared playlist from `index`, making it the running order.
+    func playSharedPlaylist(from index: Int) async {
+        guard sharedPlaylistTracks.indices.contains(index) else { return }
+        let tracks = sharedPlaylistTracks.map { library.addKaraokeVideo($0) }
+        queue.replace(with: tracks.map(\.id), startingAt: index)
+        await open(tracks[index])
+        startPlaybackIfLocal()
     }
 
     /// Which pane the sidebar is showing.
     enum SidebarMode: String, CaseIterable, Identifiable {
-        case library, find
+        case library, find, party
         var id: String { rawValue }
         var title: String {
             switch self {
             case .library: return "Songs"
             case .find: return "Find"
+            case .party: return "Shared"
             }
         }
     }
@@ -252,8 +312,28 @@ final class AppModel {
 
     /// Called when a song reaches its end, from either playback path.
     func songFinished() {
+        // Someone may have added to the shared playlist during that song, so
+        // check before deciding there's nothing left to play.
+        if sharedPlaylist != nil {
+            Task {
+                await refreshSharedPlaylist()
+                appendNewSharedPlaylistSongs()
+                if queue.hasNext { skipToNext() }
+            }
+            return
+        }
         guard queue.hasNext else { return }
         skipToNext()
+    }
+
+    /// Adds playlist songs that aren't in the queue yet, keeping order.
+    private func appendNewSharedPlaylistSongs() {
+        let queued = Set(
+            queue.entries.compactMap { library.track(withID: $0)?.source.youTubeVideoID }
+        )
+        for result in sharedPlaylistTracks where !queued.contains(result.videoID) {
+            queue.append(library.addKaraokeVideo(result).id)
+        }
     }
 
     /// Adds a video the user found by browsing YouTube.

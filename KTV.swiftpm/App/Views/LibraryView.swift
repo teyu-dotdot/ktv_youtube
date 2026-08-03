@@ -31,9 +31,10 @@ struct LibraryView: View {
             switch model.sidebarMode {
             case .library: libraryList
             case .find: KaraokeSearchSheet()
+            case .party: SharedPlaylistView()
             }
         }
-        .navigationTitle(model.sidebarMode == .library ? "Songs" : "Find a song")
+        .navigationTitle(model.sidebarMode.title)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -41,6 +42,12 @@ struct LibraryView: View {
                         model.sidebarMode = .find
                     } label: {
                         Label("Find karaoke version", systemImage: "magnifyingglass")
+                    }
+                    Divider()
+                    Button {
+                        model.sidebarMode = .party
+                    } label: {
+                        Label("Share a queue with everyone", systemImage: "person.2")
                     }
                     Divider()
                     Button {

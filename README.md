@@ -33,7 +33,15 @@ gives you:
 - **Three removal presets**, trading vocal suppression against how much of the
   band survives.
 
-**A queue**, shared by both paths. Add songs from search or your library with
+**A shared queue, without a server.** Point the app at a YouTube
+*collaborative* playlist and everyone adds songs from the YouTube app on their
+own phone — no accounts in this app, nothing for them to install. The iPad reads
+the list back and plays it in order, re-checking between songs so late additions
+appear. Reading a playlist costs 1 quota unit against the 10,000/day allowance,
+so refreshing constantly is free. Without an API key the app hands the playlist
+to YouTube to play natively instead.
+
+**A local queue**, shared by both paths. Add songs from search or your library with
 **play now**, **play next**, or **add to queue**; skip forward and back; reorder
 or clear what's coming. Songs advance automatically when one finishes — the
 embedded player reports the end of a video through its JS bridge, so a karaoke
